@@ -1,0 +1,23 @@
+{
+  "name": "andres-userscripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo para desarrollar varios userscripts con Bun, Vite y vite-plugin-monkey.",
+  "scripts": {
+    "list": "bun tools/list.mjs",
+    "dev:sri": "bun tools/vite.mjs dev sri-comprobantes",
+    "build:sri": "bun tools/vite.mjs build sri-comprobantes",
+    "dev:demo": "bun tools/vite.mjs dev demo-current-site",
+    "build:demo": "bun tools/vite.mjs build demo-current-site",
+    "build:all": "bun tools/build-all.mjs",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vite-plugin-monkey": "latest"
+  }
+}
