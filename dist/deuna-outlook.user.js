@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.4
+// @version      1.0.5
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com

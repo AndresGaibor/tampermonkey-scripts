@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         SRI - Comprobantes sincronizados manual
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      2026.6.12.13
+// @version      2026.6.12.14
 // @author       Andres
 // @description  Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.
-// @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=srienlinea.sri.gob.ec
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
 // @downloadURL  https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/sri-comprobantes.user.js
 // @updateURL    https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/sri-comprobantes.user.js

@@ -5,14 +5,14 @@ export const scripts = {
     userscript: {
       name: 'SRI - Comprobantes sincronizados manual',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '2026.6.12.13',
+      version: '2026.6.12.14',
       description:
         'Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.',
       author: 'Andres',
       match: [
         'https://srienlinea.sri.gob.ec/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf*',
       ],
-      icon: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+      icon: 'https://www.google.com/s2/favicons?sz=64&domain=srienlinea.sri.gob.ec',
       grant: [
         'GM_xmlhttpRequest',
         'unsafeWindow',
@@ -30,7 +30,7 @@ export const scripts = {
     userscript: {
       name: 'Deuna Outlook → SriCache',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '1.0.4',
+      version: '1.0.5',
       description: 'Extrae recargas Deuna desde Outlook Web y las envía a SriCache',
       author: 'SriCache',
       match: [
@@ -58,7 +58,7 @@ export const scripts = {
     userscript: {
       name: 'Demo - Current Site Helper',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.1.3',
+      version: '0.1.4',
       description: 'Script mínimo de ejemplo para crear nuevos userscripts desde este monorepo.',
       author: 'Andres',
       match: ['https://example.com/*'],
@@ -73,13 +73,14 @@ export const scripts = {
     userscript: {
       name: 'Better ChatGPT Assistant (asistente multifunción mejorado para ChatGPT web)',
       namespace: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
-      version: '8.2.3.8',
+      version: '8.2.3.9',
       description:
         'Better ChatGPT Assistant con Virtual Scroll Engine 6.0: chats largos ultra fluidos, exportación, monitor de tokens, i18n y más.',
       homepageURL: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
       supportURL: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-/issues',
       author: '3150214587',
       license: 'MIT',
+      icon: 'https://www.google.com/s2/favicons?sz=64&domain=chatgpt.com',
       match: ['https://chat.openai.com/*', 'https://chatgpt.com/*'],
       grant: [],
       $extra: {
