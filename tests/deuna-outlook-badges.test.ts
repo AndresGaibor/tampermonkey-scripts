@@ -50,16 +50,17 @@ class FakeElement {
 }
 
 describe('deuna-outlook badges', () => {
-  test('muestra el badge en Outlook cuando el item role=option no es div', async () => {
+  test('muestra el badge cuando transactionNumber está en deuna_sent_txns', async () => {
     const option = new FakeElement('article') as unknown as HTMLElement;
     option.setAttribute('role', 'option');
     option.setAttribute(
       'aria-label',
-      'notificaciones@deunaapp.com ¡Listo! Recargaste $5,00 en tu cuenta Deuna ✅ Lun 10/06/2026',
+      'notificaciones@deunaapp.com ¡Listo! Recargaste $5,00 en tu cuenta Deuna ✅ Lun 10/06/2026 Andres Gaibor Recargaste $5,00 de saldo a tu cuenta Deuna Detalles de la transacción Monto $5,00 USD Motivo Recarga Fecha 10 jun 2026 - 08h30 Número de transacción 555',
     );
 
-    const storedSignatures = JSON.stringify(['notificaciones deunaapp com|5 00|usd|recarga']);
-    const store = new Map<string, string>([['deuna_sent_signatures', storedSignatures]]);
+    const store = new Map<string, string>([
+      ['deuna_sent_txns', JSON.stringify(['555'])],
+    ]);
 
     const documentMock = {
       readyState: 'complete',
@@ -237,6 +238,7 @@ describe('deuna-outlook badges', () => {
 
     const store = new Map<string, string>([
       ['deuna_sent_signatures', JSON.stringify(['notificaciones deunaapp com|9 00|usd|recarga|23 jun 2026 09h10'])],
+      ['deuna_sent_txns', JSON.stringify(['999'])],
     ]);
     let currentOptions: HTMLElement[] = [];
     let mutationCallback: MutationCallback | undefined;
@@ -319,6 +321,81 @@ describe('deuna-outlook badges', () => {
       const badge = option.querySelector(':scope > .deuna-sent-badge');
       expect(badge).not.toBeNull();
       expect(badge?.textContent).toBe('Enviado');
+    } finally {
+      globalThis.document = originalDocument;
+      globalThis.location = originalLocation;
+      globalThis.setInterval = originalSetInterval;
+      globalThis.localStorage = originalLocalStorage;
+      globalThis.fetch = originalFetch;
+      globalThis.GM_xmlhttpRequest = originalGm;
+      globalThis.MutationObserver = originalMutationObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
+
+  test('NO marca badge si fingerprint coincide pero transactionNumber no está en deuna_sent_txns', async () => {
+    const option = new FakeElement('article') as unknown as HTMLElement;
+    option.setAttribute('role', 'option');
+    option.setAttribute(
+      'aria-label',
+      'notificaciones@deunaapp.com ¡Listo! Recargaste $5,00 en tu cuenta Deuna ✅ Vie 26/6 Andres Gaibor Recargaste $5,00 de saldo a tu cuenta Deuna Detalles de la transacción Monto $5,00 USD Motivo Recarga Fecha 26 jun 2026 - 10h00 Número de transacción 888',
+    );
+
+    const store = new Map<string, string>([
+      ['deuna_sent_txns', JSON.stringify(['111'])],
+      ['deuna_sent_signatures', JSON.stringify(['notificaciones deunaapp com|5 00|usd|recarga'])],
+    ]);
+
+    const documentMock = {
+      readyState: 'complete',
+      title: 'Inbox - Outlook',
+      body: { textContent: '', appendChild: () => option },
+      getElementById: () => null,
+      addEventListener: () => undefined,
+      querySelectorAll: (selector: string) => {
+        if (selector === '[role="option"][aria-label]') return [option];
+        return [];
+      },
+      querySelector: () => null,
+      createElement: (tagName: string) => new FakeElement(tagName),
+    } as unknown as Document;
+
+    const originalDocument = globalThis.document;
+    const originalLocation = globalThis.location;
+    const originalSetInterval = globalThis.setInterval;
+    const originalLocalStorage = globalThis.localStorage;
+    const originalFetch = globalThis.fetch;
+    const originalGm = globalThis.GM_xmlhttpRequest;
+    const originalMutationObserver = globalThis.MutationObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+
+    globalThis.document = documentMock;
+    globalThis.location = { href: 'https://outlook.office.com/mail/' } as Location;
+    globalThis.setInterval = (() => 0) as typeof setInterval;
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => { cb(0); return 0; }) as typeof requestAnimationFrame;
+    globalThis.GM_xmlhttpRequest = undefined;
+    globalThis.MutationObserver = class {
+      observe() {}
+      disconnect() {}
+      takeRecords() { return []; }
+    } as typeof MutationObserver;
+    globalThis.localStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => { store.set(key, value); },
+      removeItem: (key: string) => { store.delete(key); },
+      clear: () => { store.clear(); },
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() { return store.size; },
+    } as Storage;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })) as typeof fetch;
+
+    try {
+      await import('../scripts/deuna-outlook/src/main.ts?no-txn-match');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const badge = option.querySelector(':scope > .deuna-sent-badge');
+      expect(badge).toBeNull();
     } finally {
       globalThis.document = originalDocument;
       globalThis.location = originalLocation;

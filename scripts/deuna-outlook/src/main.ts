@@ -520,7 +520,7 @@ function updateMailListBadges(): void {
       continue;
     }
 
-    const loaded = isFingerprintLoaded(receipt) || (receipt.transactionNumber ? getSentTxnIds().has(receipt.transactionNumber) : false);
+    const loaded = Boolean(receipt.transactionNumber && getSentTxnIds().has(receipt.transactionNumber));
     renderBadge(option, loaded);
   }
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.11
+// @version      1.0.12
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -418,7 +418,7 @@
 				renderBadge(option, false);
 				continue;
 			}
-			renderBadge(option, isFingerprintLoaded(receipt) || (receipt.transactionNumber ? getSentTxnIds().has(receipt.transactionNumber) : false));
+			renderBadge(option, Boolean(receipt.transactionNumber && getSentTxnIds().has(receipt.transactionNumber)));
 		}
 	}
 	function updateReadingPaneBadge() {
