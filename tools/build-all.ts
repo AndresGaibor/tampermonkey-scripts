@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { getScriptNames } from '../scripts.manifest.mjs';
+import { getScriptNames } from '../scripts.manifest.ts';
 
 await rm('dist', { recursive: true, force: true });
 

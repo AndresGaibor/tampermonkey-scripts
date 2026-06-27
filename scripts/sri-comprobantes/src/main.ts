@@ -1,9 +1,11 @@
+// @ts-nocheck
 // Script migrado desde Tampermonkey.
-// IMPORTANTE: la metadata (@name, @match, @grant, etc.) ahora se controla desde scripts.manifest.mjs.
+// IMPORTANTE: la metadata (@name, @match, @grant, etc.) ahora se controla desde scripts.manifest.ts.
 // La lógica se mantiene igual para que primero funcione y luego puedas refactorizarla por módulos.
 
 (function () {
-  'use strict';
+'// @ts-nocheck'
+'use strict';
 
   const TARGET_PATH =
     '/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf';

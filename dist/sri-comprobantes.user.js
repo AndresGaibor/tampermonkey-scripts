@@ -20,6 +20,7 @@
 
 (function() {
 	"use strict"(function() {
+		"// @ts-nocheck";
 		"use strict";
 		if (!location.pathname.includes("/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf")) return;
 		const CONFIG = {

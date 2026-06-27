@@ -1,4 +1,4 @@
-import { scripts } from '../scripts.manifest.mjs';
+import { scripts } from '../scripts.manifest.ts';
 
 for (const [name, config] of Object.entries(scripts)) {
   console.log(`${name}`);

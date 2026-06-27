@@ -5,13 +5,13 @@ Monorepo para desarrollar varios userscripts con **Bun + Vite + vite-plugin-monk
 Incluye tu script actual del SRI como primer script:
 
 ```txt
-scripts/sri-comprobantes/src/main.js
+scripts/sri-comprobantes/src/main.ts
 ```
 
 La metadata de instalación ya no se edita dentro del archivo del script, sino en:
 
 ```txt
-scripts.manifest.mjs
+scripts.manifest.ts
 ```
 
 ## Instalar dependencias
@@ -25,6 +25,12 @@ bun install
 ```bash
 bun run list
 ```
+
+## Scripts incluidos
+
+- `sri-comprobantes` - script del SRI para comprobantes sincronizados manual.
+- `demo-current-site` - ejemplo mínimo para crear nuevos userscripts.
+- `better-chatgpt-assistant` - asistente multifunción para ChatGPT web con virtualización, exportación y panel de control.
 
 ## Desarrollar el script del SRI
 
@@ -66,8 +72,8 @@ https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/sr
 Antes de publicar, cambia el nombre del repo o la cuenta en:
 
 ```txt
-scripts.manifest.mjs
-vite.config.mjs
+scripts.manifest.ts
+vite.config.ts
 ```
 
 O usa variables de entorno al compilar:
@@ -84,7 +90,7 @@ USERSCRIPTS_RAW_BASE="https://raw.githubusercontent.com/AndresGaibor/tampermonke
 scripts/mi-nuevo-script/src/main.ts
 ```
 
-2. Agrega su entrada en `scripts.manifest.mjs`:
+2. Agrega su entrada en `scripts.manifest.ts`:
 
 ```js
 'mi-nuevo-script': {
@@ -108,8 +114,8 @@ scripts/mi-nuevo-script/src/main.ts
 ```json
 {
   "scripts": {
-    "dev:mi-nuevo-script": "bun tools/vite.mjs dev mi-nuevo-script",
-    "build:mi-nuevo-script": "bun tools/vite.mjs build mi-nuevo-script"
+    "dev:mi-nuevo-script": "bun tools/vite.ts dev mi-nuevo-script",
+    "build:mi-nuevo-script": "bun tools/vite.ts build mi-nuevo-script"
   }
 }
 ```
@@ -120,7 +126,7 @@ scripts/mi-nuevo-script/src/main.ts
 scripts/
   sri-comprobantes/
     src/
-      main.js
+      main.ts
   demo-current-site/
     src/
       main.ts
@@ -135,7 +141,7 @@ dist/
 
 ## Siguiente refactor sugerido para el script SRI
 
-Tu `main.js` todavía conserva toda la lógica junta para no romper nada. Lo siguiente sería extraerlo así:
+Tu `main.ts` todavía conserva toda la lógica junta para no romper nada. Lo siguiente sería extraerlo así:
 
 ```txt
 scripts/sri-comprobantes/src/

@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
   const CHECK_INTERVAL_MS = 1100;

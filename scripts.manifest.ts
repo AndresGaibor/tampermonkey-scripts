@@ -1,7 +1,7 @@
 export const scripts = {
   'sri-comprobantes': {
     fileName: 'sri-comprobantes.user.js',
-    entry: 'scripts/sri-comprobantes/src/main.js',
+    entry: 'scripts/sri-comprobantes/src/main.ts',
     userscript: {
       name: 'SRI - Comprobantes sincronizados manual',
       namespace: 'https://github.com/AndresGaibor/userscripts',
@@ -41,7 +41,7 @@ export const scripts = {
 
   'better-chatgpt-assistant': {
     fileName: 'better-chatgpt-assistant.user.js',
-    entry: 'scripts/better-chatgpt-assistant/src/main.js',
+    entry: 'scripts/better-chatgpt-assistant/src/main.ts',
     userscript: {
       name: 'Better ChatGPT Assistant (asistente multifunción mejorado para ChatGPT web)',
       namespace: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import monkey from 'vite-plugin-monkey';
-import { getScript, getScriptNames } from './scripts.manifest.mjs';
+import { getScript, getScriptNames } from './scripts.manifest.ts';
 
 const scriptName = process.env.SCRIPT || 'sri-comprobantes';
 const script = getScript(scriptName);

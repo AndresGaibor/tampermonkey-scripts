@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
-import { getScript, getScriptNames } from '../scripts.manifest.mjs';
+import { getScript, getScriptNames } from '../scripts.manifest.ts';
 
 const [mode, scriptName] = process.argv.slice(2);
 
 if (!['dev', 'build'].includes(mode) || !scriptName) {
-  console.error('Uso: bun tools/vite.mjs <dev|build> <script-name>');
+  console.error('Uso: bun tools/vite.ts <dev|build> <script-name>');
   console.error(`Scripts disponibles: ${getScriptNames().join(', ')}`);
   process.exit(1);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getScript, getScriptNames } from '../scripts.manifest.mjs';
+import { getScript, getScriptNames } from '../scripts.manifest.ts';
 
 describe('scripts.manifest', () => {
   test('registra el script Better ChatGPT Assistant', () => {
@@ -8,7 +8,7 @@ describe('scripts.manifest', () => {
     const script = getScript('better-chatgpt-assistant');
     expect(script).not.toBeNull();
     expect(script?.fileName).toBe('better-chatgpt-assistant.user.js');
-    expect(script?.entry).toBe('scripts/better-chatgpt-assistant/src/main.js');
+    expect(script?.entry).toBe('scripts/better-chatgpt-assistant/src/main.ts');
     expect(script?.userscript.name).toContain('Better ChatGPT Assistant');
     expect(script?.userscript.namespace).toBe('https://github.com/3150214587/chatgpt-virtual-scrollGPT-');
     expect(script?.userscript.match).toEqual([

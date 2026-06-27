@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
-import { getScript, getScriptNames } from '../scripts.manifest.mjs';
+import { getScript, getScriptNames } from '../scripts.manifest.ts';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
