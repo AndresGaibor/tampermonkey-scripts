@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.7
+// @version      1.0.8
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -113,14 +113,28 @@
 		const sent = getSentSignatures();
 		return buildReceiptSignatures(data).some((signature) => sent.has(signature));
 	}
+	function normalizeDeunaApiBase(value) {
+		const base = value.replace(/\/+$/, "");
+		if (base.endsWith("/api/deuna-imports")) return base;
+		if (base.endsWith("/api")) return `${base}/deuna-imports`;
+		try {
+			const url = new URL(base);
+			if (!url.pathname || url.pathname === "/") return `${base}/api/deuna-imports`;
+		} catch {}
+		return base;
+	}
 	function getApiBase() {
 		try {
-			const val = getStoredValue("api_base", "");
-			if (val) return val.replace(/\/+$/, "");
+			const val = getStoredValue("deuna_api_base", "");
+			if (val) return normalizeDeunaApiBase(val);
 		} catch {}
 		try {
 			const val = localStorage.getItem("deuna_api_base");
-			if (val) return val.replace(/\/+$/, "");
+			if (val) return normalizeDeunaApiBase(val);
+		} catch {}
+		try {
+			const val = getStoredValue("api_base", "");
+			if (val) return normalizeDeunaApiBase(val);
 		} catch {}
 		return "http://localhost:3000/api/deuna-imports";
 	}
@@ -211,18 +225,19 @@
 	}
 	function parseDeunaReceiptFromText(text, overrides = {}, options = {}) {
 		if (!isDeunaEmail(text)) return null;
-		const txnMatch = text.match(/N[uú]mero de transacci[oó]n\s*: ?\s*(\d+)/i);
-		const amountMatch = text.match(/Monto\s*: ?\s*\$?([\d,.]+)\s*(USD)?/i);
-		const reasonMatch = text.match(/Motivo\s*: ?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ ]+?)\s+Fecha/i);
+		const fieldSeparator = "\\s*: ?\\s*|\\s+";
+		const txnMatch = text.match(new RegExp(`N[uú]mero de transacci[oó]n(?:${fieldSeparator})(\\d+)`, "i"));
+		const amountMatch = text.match(new RegExp(`Monto(?:${fieldSeparator})\\$?([\\d,.]+)\\s*(USD)?`, "i"));
+		const reasonMatch = text.match(new RegExp(`Motivo(?:${fieldSeparator})([A-Za-zÁÉÍÓÚáéíóúñÑ ]+?)\\s+Fecha`, "i"));
 		if (!amountMatch || !reasonMatch) return null;
 		const amount = parseAmount(amountMatch[1]);
 		if (amount === null) return null;
 		const reason = reasonMatch[1].trim();
 		if (reason.toLowerCase() !== "recarga") return null;
-		const dateMatch = text.match(/Fecha\s*: ?\s*(\d{1,2}\s+[a-zA-ZáéíóúñÑ]+\.?\s+\d{4}\s*-\s*\d{2}[h:]\d{2})/i);
-		const sourceMatch = text.match(/Cuenta de origen\s*: ?\s*(\*+\d+)/i);
-		const destMatch = text.match(/Cuenta de destino\s*: ?\s*(\*+\d+)/i);
-		const maskedIdMatch = text.match(/C[ée]dula terminada en\s*: ?\s*(\*+\d+)/i);
+		const dateMatch = text.match(new RegExp(`Fecha(?:${fieldSeparator})(\\d{1,2}\\s+[a-zA-ZáéíóúñÑ]+\\.?\\s+\\d{4}\\s*-\\s*\\d{2}[h:]\\d{2})`, "i"));
+		const sourceMatch = text.match(new RegExp(`Cuenta de origen(?:${fieldSeparator})(\\*+\\d+)`, "i"));
+		const destMatch = text.match(new RegExp(`Cuenta de destino(?:${fieldSeparator})(\\*+\\d+)`, "i"));
+		const maskedIdMatch = text.match(new RegExp(`C[ée]dula terminada en(?:${fieldSeparator})(\\*+\\d+)`, "i"));
 		let supportPhone;
 		const phoneMatch = text.match(/09[\d\s-]{8,15}/);
 		if (phoneMatch) {
