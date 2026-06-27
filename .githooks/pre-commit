@@ -1,16 +1,18 @@
 #!/bin/bash
 set -e
 
+echo "=== pre-commit: bump versions ==="
+bun run bump:userscripts
+
 echo "=== pre-commit: typecheck ==="
 bun run typecheck
 
 echo "=== pre-commit: tests ==="
 bun test
 
-echo "=== pre-commit: build:sri ==="
-bun run build:sri
+echo "=== pre-commit: build:all ==="
+bun run build:all
 
-echo "=== pre-commit: build:better-chatgpt-assistant ==="
-bun run build:better-chatgpt-assistant
+git add -A scripts.manifest.ts dist
 
 echo "=== pre-commit: OK ==="

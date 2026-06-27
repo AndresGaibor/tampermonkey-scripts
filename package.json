@@ -6,6 +6,7 @@
   "description": "Monorepo para desarrollar varios userscripts con Bun, Vite y vite-plugin-monkey.",
   "scripts": {
     "list": "bun tools/list.ts",
+    "bump:userscripts": "bun tools/bump-userscript-versions.ts",
     "dev:sri": "bun tools/vite.ts dev sri-comprobantes",
     "build:sri": "bun tools/vite.ts build sri-comprobantes",
     "dev:demo": "bun tools/vite.ts dev demo-current-site",

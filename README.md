@@ -20,17 +20,40 @@ scripts.manifest.ts
 bun install
 ```
 
+## Habilitar hooks de Git
+
+El repo trae un `pre-commit` en `.githooks/pre-commit`.
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Ese hook ejecuta, en este orden:
+
+- `bun run bump:userscripts`
+- `bun run typecheck`
+- `bun test`
+- `bun run build:all`
+
 ## Ver scripts disponibles
 
 ```bash
 bun run list
 ```
 
-## Scripts incluidos
+## Codemaps
+
+- [AI Agent Guide](docs/AI-AGENT-GUIDE.md)
+- [Architecture Map](docs/CODEMAPS/ARCHITECTURE.md)
+- [Module Map](docs/CODEMAPS/MODULES.md)
+- [File Map](docs/CODEMAPS/FILES.md)
+
+## Scripts y comandos útiles
 
 - `sri-comprobantes` - script del SRI para comprobantes sincronizados manual.
 - `demo-current-site` - ejemplo mínimo para crear nuevos userscripts.
 - `better-chatgpt-assistant` - asistente multifunción para ChatGPT web con virtualización, exportación y panel de control.
+- `bump:userscripts` - actualiza las versiones de los userscripts antes del commit.
 
 ## Desarrollar el script del SRI
 
@@ -84,7 +107,7 @@ USERSCRIPTS_RAW_BASE="https://raw.githubusercontent.com/AndresGaibor/tampermonke
 
 ## Agregar otro userscript
 
-1. Crea una carpeta:
+1. Crea una carpeta y un entrypoint:
 
 ```txt
 scripts/mi-nuevo-script/src/main.ts
@@ -109,7 +132,9 @@ scripts/mi-nuevo-script/src/main.ts
 },
 ```
 
-3. Agrega scripts opcionales en `package.json`:
+3. Reutiliza helpers de `shared/` antes de crear nuevos módulos.
+
+4. Agrega scripts opcionales en `package.json`:
 
 ```json
 {
@@ -138,6 +163,17 @@ shared/
 dist/
   *.user.js
 ```
+
+## Guía para agentes de IA
+
+Si vas a modificar o crear scripts, sigue este orden:
+
+1. Lee `docs/AI-AGENT-GUIDE.md`.
+2. Revisa el script más cercano en `scripts/<nombre>/src/main.ts`.
+3. Busca helpers existentes en `shared/`.
+4. Si la lógica cruza responsabilidades, separa `domain/`, `application/`, `infrastructure/` y `presentation/`.
+5. Agrega tests en `tests/` para el comportamiento nuevo.
+6. Ejecuta `bun run build:all` antes de pedir revisión.
 
 ## Siguiente refactor sugerido para el script SRI
 
