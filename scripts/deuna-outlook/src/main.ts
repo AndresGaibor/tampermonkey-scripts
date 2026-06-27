@@ -281,13 +281,14 @@ function parseDeunaReceiptFromText(
 }
 
 function getOutlookMailItems(): HTMLElement[] {
-  return Array.from(document.querySelectorAll('#MailList [role="option"][aria-label]')) as HTMLElement[];
+  return Array.from(document.querySelectorAll('div[role="option"][aria-label]')) as HTMLElement[];
 }
 
 function getOutlookReadingPane(): HTMLElement | null {
   return (
     (document.querySelector('#ConversationReadingPaneContainer') as HTMLElement | null) ||
-    (document.querySelector('#ReadingPaneContainerId') as HTMLElement | null)
+    (document.querySelector('#ReadingPaneContainerId') as HTMLElement | null) ||
+    (document.querySelector('div[role="document"]') as HTMLElement | null)
   );
 }
 
@@ -329,17 +330,35 @@ function extractFromPage(): DeunaEmailReceipt | null {
 function extractPreviewReceipt(option: Element): DeunaEmailReceipt | null {
   const text = option.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim() || option.textContent?.replace(/\s+/g, ' ').trim() || '';
 
-  const sender = text.includes('notificaciones@deunaapp.com') ? 'notificaciones@deunaapp.com' : undefined;
-  const subjectMatch = text.match(/¡Listo! Recargaste \$[\d.,]+ en tu cuenta Deuna ✅/i);
-  const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+[^A-Z]*?/i);
-  const subject = subjectMatch?.[0];
-  const receivedAt = dateMatch?.[0];
+  const isDeuna = text.includes('notificaciones@deunaapp.com') && /Recargaste/i.test(text);
+  if (!isDeuna) return null;
 
-  return parseDeunaReceiptFromText(text, {
-    sender,
-    subject,
+  const subjectMatch = text.match(/¡Listo!\s+Recargaste\s+\$?([\d,.]+)\s+en\s+tu\s+cuenta\s+Deuna/i);
+  if (!subjectMatch) return null;
+
+  const amount = parseAmount(subjectMatch[1]);
+  if (amount === null) return null;
+
+  const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+(\d{1,2}\/\d{1,2}\/\d{4})/i) || text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+\d{1,2}:\d{2}/i);
+  const receivedAt = dateMatch ? dateMatch[0] : undefined;
+
+  const parsed = parseDeunaReceiptFromText(text, {
+    sender: 'notificaciones@deunaapp.com',
+    subject: subjectMatch[0],
     receivedAt,
   }, { requireTransactionNumber: false });
+
+  if (parsed) return parsed;
+
+  return {
+    sender: 'notificaciones@deunaapp.com',
+    subject: subjectMatch[0],
+    receivedAt,
+    amount,
+    currency: 'USD',
+    reason: 'Recarga',
+    transactionNumber: '',
+  };
 }
 
 function renderBadge(target: HTMLElement | null, show: boolean): void {

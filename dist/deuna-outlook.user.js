@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.5
+// @version      1.0.6
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -38,7 +38,7 @@
 			return fallback;
 		}
 	}
-	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}#MailList [role=option]{padding-inline-end:96px;position:relative}#ConversationReadingPaneContainer,#ReadingPaneContainerId{position:relative}#MailList [role=option] .deuna-sent-badge{top:50%;right:12px;transform:translateY(-50%)}#ConversationReadingPaneContainer .deuna-sent-badge,#ReadingPaneContainerId .deuna-sent-badge{top:12px;right:16px}.deuna-sent-badge{z-index:2;color:#047857;letter-spacing:.01em;pointer-events:none;background:#10b9811f;border:1px solid #10b98147;border-radius:999px;align-items:center;gap:4px;padding:3px 8px;font-size:11px;font-weight:600;line-height:1;display:inline-flex;position:absolute;box-shadow:0 1px 2px #0f172a0f}");
+	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}div[role=option][aria-label]{position:relative}div[role=option][aria-label] .deuna-sent-badge{top:50%;right:12px;transform:translateY(-50%)}#ConversationReadingPaneContainer,#ReadingPaneContainerId,div[role=document]{position:relative}#ConversationReadingPaneContainer .deuna-sent-badge,#ReadingPaneContainerId .deuna-sent-badge,div[role=document] .deuna-sent-badge{top:12px;right:16px}.deuna-sent-badge{z-index:10;letter-spacing:.02em;pointer-events:none;background:#10b981;border-radius:4px;align-items:center;gap:4px;padding:4px 8px;font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;line-height:1;display:inline-flex;position:absolute;box-shadow:0 2px 4px #00000026;color:#fff!important}");
 	var SENT_KEY = "deuna_sent_txns";
 	var SENT_SIGNATURES_KEY = "deuna_sent_signatures";
 	var POLL_INTERVAL = 5e3;
@@ -257,10 +257,10 @@
 		return receipt;
 	}
 	function getOutlookMailItems() {
-		return Array.from(document.querySelectorAll("#MailList [role=\"option\"][aria-label]"));
+		return Array.from(document.querySelectorAll("div[role=\"option\"][aria-label]"));
 	}
 	function getOutlookReadingPane() {
-		return document.querySelector("#ConversationReadingPaneContainer") || document.querySelector("#ReadingPaneContainerId");
+		return document.querySelector("#ConversationReadingPaneContainer") || document.querySelector("#ReadingPaneContainerId") || document.querySelector("div[role=\"document\"]");
 	}
 	function extractFromPage() {
 		const { text } = getReadingPaneText();
@@ -289,16 +289,28 @@
 	}
 	function extractPreviewReceipt(option) {
 		const text = option.getAttribute("aria-label")?.replace(/\s+/g, " ").trim() || option.textContent?.replace(/\s+/g, " ").trim() || "";
-		const sender = text.includes("notificaciones@deunaapp.com") ? "notificaciones@deunaapp.com" : void 0;
-		const subjectMatch = text.match(/¡Listo! Recargaste \$[\d.,]+ en tu cuenta Deuna ✅/i);
-		const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+[^A-Z]*?/i);
-		const subject = subjectMatch?.[0];
-		const receivedAt = dateMatch?.[0];
-		return parseDeunaReceiptFromText(text, {
-			sender,
-			subject,
+		if (!(text.includes("notificaciones@deunaapp.com") && /Recargaste/i.test(text))) return null;
+		const subjectMatch = text.match(/¡Listo!\s+Recargaste\s+\$?([\d,.]+)\s+en\s+tu\s+cuenta\s+Deuna/i);
+		if (!subjectMatch) return null;
+		const amount = parseAmount(subjectMatch[1]);
+		if (amount === null) return null;
+		const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+(\d{1,2}\/\d{1,2}\/\d{4})/i) || text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+\d{1,2}:\d{2}/i);
+		const receivedAt = dateMatch ? dateMatch[0] : void 0;
+		const parsed = parseDeunaReceiptFromText(text, {
+			sender: "notificaciones@deunaapp.com",
+			subject: subjectMatch[0],
 			receivedAt
 		}, { requireTransactionNumber: false });
+		if (parsed) return parsed;
+		return {
+			sender: "notificaciones@deunaapp.com",
+			subject: subjectMatch[0],
+			receivedAt,
+			amount,
+			currency: "USD",
+			reason: "Recarga",
+			transactionNumber: ""
+		};
 	}
 	function renderBadge(target, show) {
 		if (!target) return;
