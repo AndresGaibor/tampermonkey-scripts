@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.6
+// @version      1.0.7
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -38,7 +38,7 @@
 			return fallback;
 		}
 	}
-	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}div[role=option][aria-label]{position:relative}div[role=option][aria-label] .deuna-sent-badge{top:50%;right:12px;transform:translateY(-50%)}#ConversationReadingPaneContainer,#ReadingPaneContainerId,div[role=document]{position:relative}#ConversationReadingPaneContainer .deuna-sent-badge,#ReadingPaneContainerId .deuna-sent-badge,div[role=document] .deuna-sent-badge{top:12px;right:16px}.deuna-sent-badge{z-index:10;letter-spacing:.02em;pointer-events:none;background:#10b981;border-radius:4px;align-items:center;gap:4px;padding:4px 8px;font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;line-height:1;display:inline-flex;position:absolute;box-shadow:0 2px 4px #00000026;color:#fff!important}");
+	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}[role=option][aria-label]{position:relative}[role=option][aria-label] .deuna-sent-badge{top:50%;right:12px;transform:translateY(-50%)}#ConversationReadingPaneContainer,#ReadingPaneContainerId,[role=document]{position:relative}#ConversationReadingPaneContainer .deuna-sent-badge,#ReadingPaneContainerId .deuna-sent-badge,[role=document] .deuna-sent-badge{top:12px;right:16px}.deuna-sent-badge{z-index:10;letter-spacing:.02em;pointer-events:none;background:#10b981;border-radius:4px;align-items:center;gap:4px;padding:4px 8px;font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;line-height:1;display:inline-flex;position:absolute;box-shadow:0 2px 4px #00000026;color:#fff!important}");
 	var SENT_KEY = "deuna_sent_txns";
 	var SENT_SIGNATURES_KEY = "deuna_sent_signatures";
 	var POLL_INTERVAL = 5e3;
@@ -178,7 +178,7 @@
 			"#ReadingPaneContainerId [id^=\"UniqueMessageBody_\"]",
 			"#ReadingPaneContainerId",
 			"#ConversationReadingPaneContainer",
-			"div[role=\"document\"]",
+			"[role=\"document\"]",
 			"[aria-label=\"Cuerpo del mensaje\"]"
 		]) {
 			const el = document.querySelector(selector);
@@ -257,10 +257,10 @@
 		return receipt;
 	}
 	function getOutlookMailItems() {
-		return Array.from(document.querySelectorAll("div[role=\"option\"][aria-label]"));
+		return Array.from(document.querySelectorAll("[role=\"option\"][aria-label]"));
 	}
 	function getOutlookReadingPane() {
-		return document.querySelector("#ConversationReadingPaneContainer") || document.querySelector("#ReadingPaneContainerId") || document.querySelector("div[role=\"document\"]");
+		return document.querySelector("#ConversationReadingPaneContainer") || document.querySelector("#ReadingPaneContainerId") || document.querySelector("[role=\"document\"]");
 	}
 	function extractFromPage() {
 		const { text } = getReadingPaneText();

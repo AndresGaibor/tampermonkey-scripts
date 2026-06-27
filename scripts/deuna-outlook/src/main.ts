@@ -175,7 +175,7 @@ function getReadingPaneText(): { text: string; element: Element | null } {
     '#ReadingPaneContainerId [id^="UniqueMessageBody_"]',
     '#ReadingPaneContainerId',
     '#ConversationReadingPaneContainer',
-    'div[role="document"]',
+    '[role="document"]',
     '[aria-label="Cuerpo del mensaje"]',
   ];
 
@@ -281,14 +281,14 @@ function parseDeunaReceiptFromText(
 }
 
 function getOutlookMailItems(): HTMLElement[] {
-  return Array.from(document.querySelectorAll('div[role="option"][aria-label]')) as HTMLElement[];
+  return Array.from(document.querySelectorAll('[role="option"][aria-label]')) as HTMLElement[];
 }
 
 function getOutlookReadingPane(): HTMLElement | null {
   return (
     (document.querySelector('#ConversationReadingPaneContainer') as HTMLElement | null) ||
     (document.querySelector('#ReadingPaneContainerId') as HTMLElement | null) ||
-    (document.querySelector('div[role="document"]') as HTMLElement | null)
+    (document.querySelector('[role="document"]') as HTMLElement | null)
   );
 }
 
