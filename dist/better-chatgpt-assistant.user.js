@@ -17,6 +17,9 @@
 
 (function() {
 	"use strict";
+	function clamp(value, min, max) {
+		return Math.max(min, Math.min(max, value));
+	}
 	var CHECK_INTERVAL_MS = 1100;
 	var ROUTE_GUARD_MS = 800;
 	var INPUT_DIM_IDLE_MS = 850;
@@ -132,9 +135,6 @@
 	}
 	function savePos() {
 		localStorage.setItem(KEY_POS, JSON.stringify(pinnedPos));
-	}
-	function clamp(n, min, max) {
-		return Math.max(min, Math.min(max, n));
 	}
 	function getMarginScreens() {
 		return MODE_TO_MARGIN_SCREENS[currentMode] ?? MODE_TO_MARGIN_SCREENS.balanced;

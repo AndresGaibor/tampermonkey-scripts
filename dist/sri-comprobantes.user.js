@@ -19,8 +19,27 @@
 // ==/UserScript==
 
 (function() {
-	"use strict"(function() {
-		"// @ts-nocheck";
+	"use strict";
+	function onlyDigits(value) {
+		return String(value ?? "").replace(/\D/g, "");
+	}
+	function normalizeSpaces(value) {
+		return String(value ?? "").replace(/\s+/g, " ").trim();
+	}
+	function normalizeText(value) {
+		return normalizeSpaces(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+	}
+	function escapeHtml(value) {
+		return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#039;");
+	}
+	function debounce(fn, delayMs) {
+		let timer = null;
+		return (...args) => {
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => fn(...args), delayMs);
+		};
+	}
+	(function() {
 		"use strict";
 		if (!location.pathname.includes("/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf")) return;
 		const CONFIG = {
@@ -502,7 +521,7 @@
 		}
 		function getTableIndexes(tbody) {
 			const table = tbody.closest("table");
-			const normalizedHeaders = (table ? Array.from(table.querySelectorAll("thead th")) : []).map((th) => normalizeText(th.textContent));
+			const normalizedHeaders = (table ? Array.from(table.querySelectorAll("thead th")) : []).map((th) => normalizeText(th.textContent ?? ""));
 			const findHeader = (...needles) => {
 				const index = normalizedHeaders.findIndex((text) => needles.some((needle) => text.includes(needle)));
 				return index >= 0 ? index : null;
@@ -1470,25 +1489,6 @@
       }
     `;
 			document.head.appendChild(style);
-		}
-		function onlyDigits(value) {
-			return String(value || "").replace(/\D/g, "");
-		}
-		function normalizeSpaces(value) {
-			return String(value || "").replace(/\s+/g, " ").trim();
-		}
-		function normalizeText(value) {
-			return normalizeSpaces(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-		}
-		function escapeHtml(value) {
-			return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#039;");
-		}
-		function debounce(fn, delay) {
-			let timer = null;
-			return function(...args) {
-				clearTimeout(timer);
-				timer = setTimeout(() => fn.apply(this, args), delay);
-			};
 		}
 	})();
 })();

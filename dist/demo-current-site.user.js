@@ -18,10 +18,10 @@
 (function() {
 	"use strict";
 	function normalizeSpaces(value) {
-		return value.replace(/\s+/g, " ").trim();
+		return String(value ?? "").replace(/\s+/g, " ").trim();
 	}
 	function normalizeText(value) {
-		return normalizeSpaces(value).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+		return normalizeSpaces(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 	}
 	function injectCss(css, id) {
 		if (id) {

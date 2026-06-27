@@ -1,4 +1,5 @@
-// @ts-nocheck
+import { clamp } from '../../../shared/math.ts';
+
 'use strict';
 
   const CHECK_INTERVAL_MS = 1100;
@@ -124,10 +125,6 @@
     localStorage.setItem(KEY_POS, JSON.stringify(pinnedPos));
   }
 
-  function clamp(n, min, max) {
-    return Math.max(min, Math.min(max, n));
-  }
-
   function getMarginScreens() {
     return MODE_TO_MARGIN_SCREENS[currentMode] ?? MODE_TO_MARGIN_SCREENS.balanced;
   }
@@ -232,7 +229,7 @@
     }
   }
 
-  function virtualizeOnce(marginScreensOverride) {
+  function virtualizeOnce(marginScreensOverride?: number) {
     if (!virtualizationEnabled || ctrlFFreeze) {
       lastVirtualizedCount = 0;
       lastTurnsCount = getMessageNodes().length || 0;
@@ -284,7 +281,7 @@
     lastVirtualizedCount = slimmedCount;
   }
 
-  function scheduleVirtualize(marginOverride) {
+  function scheduleVirtualize(marginOverride?: number) {
     if (rafPending) return;
     rafPending = true;
     requestAnimationFrame(() => {
@@ -370,13 +367,13 @@
     if (!header) return null;
 
     const btns = header.querySelectorAll('button, [role="button"]');
-    const candidates = [];
+    const candidates: HTMLElement[] = [];
     for (const b of btns) {
       const txt = ((b.innerText || b.textContent || '')).trim();
       if (!txt) continue;
 
       const hit = /chatgpt/i.test(txt) || /\bgpt\b/i.test(txt) || txt.includes('modelo') || txt.includes('cambiar') || txt.includes('ChatGPT');
-      if (hit) candidates.push(b);
+      if (hit) candidates.push(b as HTMLElement);
     }
 
     if (!candidates.length) return null;
@@ -589,7 +586,7 @@
     const right = document.createElement('div');
     right.className = 'fp-right';
 
-    const mkBtn = (label, fn, title) => {
+    const mkBtn = (label: string, fn: () => void, title?: string) => {
       const b = document.createElement('button');
       b.className = 'cgpt-vs-chip';
       b.textContent = label;

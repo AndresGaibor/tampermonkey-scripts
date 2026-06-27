@@ -1,13 +1,4 @@
-export function normalizeSpaces(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-export function normalizeText(value: string): string {
-  return normalizeSpaces(value)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-}
+export { normalizeSpaces, normalizeText } from './text.ts';
 
 export function waitForElement<T extends Element>(
   selector: string,

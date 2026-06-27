@@ -1,10 +1,16 @@
-// @ts-nocheck
 // Script migrado desde Tampermonkey.
 // IMPORTANTE: la metadata (@name, @match, @grant, etc.) ahora se controla desde scripts.manifest.ts.
 // La lógica se mantiene igual para que primero funcione y luego puedas refactorizarla por módulos.
 
+import {
+  escapeHtml,
+  normalizeSpaces,
+  normalizeText,
+  onlyDigits,
+} from '../../../shared/text.ts';
+import { debounce } from '../../../shared/timing.ts';
+
 (function () {
-'// @ts-nocheck'
 'use strict';
 
   const TARGET_PATH =
@@ -113,6 +119,21 @@
     }
   };
 
+  type InvoiceApiResponse = { invoices?: any[] };
+  type PeriodApiResponse = { months?: any[] };
+  type ReportStatus = { should_download_txt?: boolean; status?: string; reason?: string };
+  type TableIndexes = { type: number; access: number; xml: number; pdf: number };
+  type RowData = {
+    row: HTMLTableRowElement;
+    cells: HTMLElement[];
+    typeCell: HTMLElement | null;
+    accessCell: HTMLElement | null;
+    xmlCell: HTMLElement | null;
+    pdfCell: HTMLElement | null;
+    accessKey: string | null;
+    documentNumber: string | null;
+  };
+
   injectStyles();
   ensureDashboardMounted();
   start();
@@ -202,7 +223,7 @@
       state.lastInvoicesUrl = url;
       console.log('[SRI TM] GET invoices:', url);
 
-      const response = await requestJson(url);
+      const response = (await requestJson(url)) as { success: boolean; data: InvoiceApiResponse };
 
       if (!response || response.success !== true || !response.data) {
         throw new Error('Formato inválido en /invoices.');
@@ -278,7 +299,7 @@
       state.lastPeriodsUrl = url;
       console.log('[SRI TM] GET periods:', url);
 
-      const response = await requestJson(url);
+      const response = (await requestJson(url)) as { success: boolean; data: PeriodApiResponse };
 
       if (!response || response.success !== true || !response.data) {
         throw new Error('Formato inválido en /periods.');
@@ -346,7 +367,7 @@
       state.lastReportStatusUrl = url;
       console.log('[SRI TM] GET report-status:', url);
 
-      const response = await requestJson(url);
+      const response = (await requestJson(url)) as { success: boolean; data: ReportStatus };
 
       if (!response || response.success !== true || !response.data) {
         throw new Error('Formato inválido en /report-status.');
@@ -449,22 +470,22 @@
   }
 
   function getSelectedYear() {
-    const select = document.getElementById('frmPrincipal:ano');
+    const select = document.getElementById('frmPrincipal:ano') as HTMLSelectElement | null;
     return select ? Number(select.value) : null;
   }
 
   function getSelectedMonth() {
-    const select = document.getElementById('frmPrincipal:mes');
+    const select = document.getElementById('frmPrincipal:mes') as HTMLSelectElement | null;
     return select ? Number(select.value) : null;
   }
 
   function getSelectedDay() {
-    const select = document.getElementById('frmPrincipal:dia');
+    const select = document.getElementById('frmPrincipal:dia') as HTMLSelectElement | null;
     return select ? Number(select.value) : 0;
   }
 
   function getSelectedDocumentType() {
-    const select = document.getElementById('frmPrincipal:cmbTipoComprobante');
+    const select = document.getElementById('frmPrincipal:cmbTipoComprobante') as HTMLSelectElement | null;
     return select ? String(select.value || '') : '';
   }
 
@@ -482,13 +503,13 @@
 }
 
 function resetMonthVisibility() {
-  const monthSelect = document.getElementById('frmPrincipal:mes');
+  const monthSelect = document.getElementById('frmPrincipal:mes') as HTMLSelectElement | null;
 
   if (!monthSelect) {
     return;
   }
 
-  for (const option of Array.from(monthSelect.options)) {
+  for (const option of Array.from(monthSelect.options) as HTMLOptionElement[]) {
     option.hidden = false;
     option.disabled = false;
     option.title = '';
@@ -587,7 +608,7 @@ function ensurePeriodsMatchCurrentSelection() {
   }
 
   function applyMonthVisibility() {
-  const monthSelect = document.getElementById('frmPrincipal:mes');
+  const monthSelect = document.getElementById('frmPrincipal:mes') as HTMLSelectElement | null;
 
   if (!monthSelect) {
     return;
@@ -609,7 +630,7 @@ function ensurePeriodsMatchCurrentSelection() {
   const selectedMonth = Number(monthSelect.value);
   let hiddenCount = 0;
 
-  for (const option of Array.from(monthSelect.options)) {
+  for (const option of Array.from(monthSelect.options) as HTMLOptionElement[]) {
     const monthNumber = Number(option.value);
     const metadata = state.monthsByNumber.get(monthNumber);
 
@@ -661,7 +682,7 @@ function ensurePeriodsMatchCurrentSelection() {
     }
 
     const indexes = getTableIndexes(tbody);
-    const rows = Array.from(tbody.querySelectorAll('tr[role="row"], tr'));
+    const rows = Array.from(tbody.querySelectorAll('tr[role="row"], tr')) as HTMLTableRowElement[];
 
     const pageStats = {
       rows: 0,
@@ -771,7 +792,7 @@ function ensurePeriodsMatchCurrentSelection() {
     row.style.setProperty('display', 'none', 'important');
   }
 
-  function findComprobantesTbody() {
+  function findComprobantesTbody(): HTMLElement | null {
     return (
       document.getElementById('frmPrincipal:tablaCompRecibidos_data') ||
       document.querySelector('tbody[id$="tablaCompRecibidos_data"]') ||
@@ -779,13 +800,13 @@ function ensurePeriodsMatchCurrentSelection() {
     );
   }
 
-  function getTableIndexes(tbody) {
-    const table = tbody.closest('table');
-    const headers = table ? Array.from(table.querySelectorAll('thead th')) : [];
+  function getTableIndexes(tbody: HTMLElement): TableIndexes {
+    const table = tbody.closest('table') as HTMLTableElement | null;
+    const headers = table ? (Array.from(table.querySelectorAll('thead th')) as HTMLElement[]) : [];
 
-    const normalizedHeaders = headers.map((th) => normalizeText(th.textContent));
+    const normalizedHeaders = headers.map((th) => normalizeText(th.textContent ?? ''));
 
-    const findHeader = (...needles) => {
+    const findHeader = (...needles: string[]): number | null => {
       const index = normalizedHeaders.findIndex((text) =>
         needles.some((needle) => text.includes(needle))
       );
@@ -801,8 +822,8 @@ function ensurePeriodsMatchCurrentSelection() {
     };
   }
 
-  function extractRowData(row, indexes) {
-    const cells = Array.from(row.children);
+  function extractRowData(row: HTMLTableRowElement, indexes: TableIndexes): RowData {
+    const cells = Array.from(row.children) as HTMLElement[];
 
     const typeCell = cells[indexes.type] || cells[2] || null;
     const accessCell = cells[indexes.access] || cells[3] || null;
@@ -836,7 +857,7 @@ function ensurePeriodsMatchCurrentSelection() {
     };
   }
 
-  function findMatchingInvoice(rowData) {
+  function findMatchingInvoice(rowData: Pick<RowData, 'accessKey' | 'documentNumber'>) {
     if (rowData.accessKey && state.byAccessKey.has(rowData.accessKey)) {
       return state.byAccessKey.get(rowData.accessKey);
     }
@@ -848,7 +869,7 @@ function ensurePeriodsMatchCurrentSelection() {
     return null;
   }
 
-  function resetRowVisualState(row) {
+  function resetRowVisualState(row: HTMLElement) {
     row.classList.remove(
       'tm-sri-row-downloaded',
       'tm-sri-row-missing',
@@ -860,17 +881,17 @@ function ensurePeriodsMatchCurrentSelection() {
     row.style.removeProperty('display');
   }
 
-  function isAvailable(status) {
+  function isAvailable(status: unknown) {
     return String(status || '').toLowerCase() === 'available';
   }
 
-  function isPdfOk(status) {
+  function isPdfOk(status: unknown) {
     const value = String(status || '').toLowerCase();
 
     return value !== '' && value !== 'missing';
   }
 
-  function replaceDownloadCell(cell, label, type) {
+  function replaceDownloadCell(cell: HTMLElement | null, label: string, type: string) {
     if (!cell) {
       return;
     }
@@ -892,12 +913,12 @@ function ensurePeriodsMatchCurrentSelection() {
     }
   }
 
-  function restoreDownloadCells(rowData) {
+  function restoreDownloadCells(rowData: Pick<RowData, 'xmlCell' | 'pdfCell'>) {
     restoreCell(rowData.xmlCell);
     restoreCell(rowData.pdfCell);
   }
 
-  function restoreCell(cell) {
+  function restoreCell(cell: HTMLElement | null) {
     if (!cell || !cell.dataset.tmOriginalHtml) {
       return;
     }
@@ -906,8 +927,8 @@ function ensurePeriodsMatchCurrentSelection() {
     delete cell.dataset.tmOriginalHtml;
   }
 
-  function upsertRowBadge(row, accessCell, text, type) {
-    const target = accessCell?.querySelector('.ui-dt-c') || accessCell;
+  function upsertRowBadge(row: HTMLElement, accessCell: HTMLElement | null, text: string, type: string) {
+    const target = (accessCell?.querySelector('.ui-dt-c') as HTMLElement | null) || accessCell;
 
     if (!target) {
       return;
@@ -926,7 +947,7 @@ function ensurePeriodsMatchCurrentSelection() {
     badge.textContent = text;
   }
 
-  function removeRowBadge(row) {
+  function removeRowBadge(row: HTMLElement) {
     const badge = row.querySelector('.tm-sri-row-badge');
 
     if (badge) {
@@ -934,7 +955,7 @@ function ensurePeriodsMatchCurrentSelection() {
     }
   }
 
-  function findTxtReportLink() {
+  function findTxtReportLink(): HTMLElement | null {
     return (
       document.getElementById('frmPrincipal:lnkTxtlistado') ||
       document.querySelector('a[id$="lnkTxtlistado"]') ||
@@ -956,7 +977,7 @@ function ensurePeriodsMatchCurrentSelection() {
 
     await refreshReportStatusFromApi(true);
 
-    const report = state.reportStatusData;
+    const report = state.reportStatusData as ReportStatus | null;
 
     if (!report) {
       renderDashboard({
@@ -1029,11 +1050,17 @@ function ensurePeriodsMatchCurrentSelection() {
     }
 
     const indexes = getTableIndexes(tbody);
-    const rows = Array.from(tbody.querySelectorAll('tr[role="row"], tr'))
+    const rows = (Array.from(tbody.querySelectorAll('tr[role="row"], tr')) as HTMLTableRowElement[])
       .filter((row) => row.querySelector('td'))
       .filter((row) => getComputedStyle(row).display !== 'none');
 
-    const queue = [];
+    const queue: Array<{
+      row: HTMLTableRowElement;
+      link: HTMLAnchorElement;
+      accessCell: HTMLElement | null;
+      accessKey: string | null;
+      file: 'xml' | 'pdf';
+    }> = [];
 
     for (const row of rows) {
       const rowData = extractRowData(row, indexes);
@@ -1055,8 +1082,8 @@ function ensurePeriodsMatchCurrentSelection() {
         continue;
       }
 
-      const xmlLink = rowData.xmlCell?.querySelector('a[id*="lnkXml"]');
-      const pdfLink = rowData.pdfCell?.querySelector('a[id*="lnkPdf"]');
+      const xmlLink = rowData.xmlCell?.querySelector('a[id*="lnkXml"]') as HTMLAnchorElement | null;
+      const pdfLink = rowData.pdfCell?.querySelector('a[id*="lnkPdf"]') as HTMLAnchorElement | null;
 
       if (CONFIG.AUTO_DOWNLOAD_XML && !xmlAvailable && xmlLink) {
         queue.push({
@@ -1094,7 +1121,7 @@ function ensurePeriodsMatchCurrentSelection() {
     });
   }
 
-  function startBatchDownload({ acrossPages }) {
+  function startBatchDownload({ acrossPages }: { acrossPages: boolean }) {
     if (state.isBatchDownloading) {
       renderDashboard({
         status: 'warning',
@@ -1874,7 +1901,7 @@ function ensurePeriodsMatchCurrentSelection() {
 
     const indexes = getTableIndexes(tbody);
 
-    const rows = Array.from(tbody.querySelectorAll('tr[role="row"], tr'))
+    const rows = (Array.from(tbody.querySelectorAll('tr[role="row"], tr')) as HTMLTableRowElement[])
       .filter((row) => row.querySelector('td'))
       .map((row) => {
         const rowData = extractRowData(row, indexes);
@@ -2166,36 +2193,4 @@ function ensurePeriodsMatchCurrentSelection() {
     document.head.appendChild(style);
   }
 
-  function onlyDigits(value) {
-    return String(value || '').replace(/\D/g, '');
-  }
-
-  function normalizeSpaces(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function normalizeText(value) {
-    return normalizeSpaces(value)
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
-
-  function debounce(fn, delay) {
-    let timer = null;
-
-    return function (...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(this, args), delay);
-    };
-  }
 })();
