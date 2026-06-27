@@ -15,6 +15,13 @@ import {
   getDocumentNumberFromAccessKey as getDocumentNumberFromAccessKeyDomain,
 } from './domain/invoice-keys.ts';
 import {
+  buildTableIndexes,
+  extractAccessKeyFromText,
+  extractDocumentNumberFromTypeText,
+  shouldTreatAsDownloaded,
+} from './domain/row-matching.ts';
+import { buildDownloadQueue } from './domain/download-queue.ts';
+import {
   isAvailable as isAvailableDomain,
   isPdfOk as isPdfOkDomain,
 } from './domain/status.ts';
@@ -700,10 +707,9 @@ function ensurePeriodsMatchCurrentSelection() {
       const xmlAvailable = isAvailable(invoice.xml_status);
       const pdfOk = isPdfOk(invoice.pdf_status);
 
-      const downloaded =
-        invoice.downloaded === true ||
-        (CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable) ||
-        (xmlAvailable && pdfOk);
+      const downloaded = shouldTreatAsDownloaded(invoice, {
+        hideWhenXmlIsAvailable: CONFIG.HIDE_WHEN_XML_IS_AVAILABLE,
+      });
 
       if (downloaded) {
         pageStats.downloaded++;
@@ -777,23 +783,7 @@ function ensurePeriodsMatchCurrentSelection() {
   function getTableIndexes(tbody: HTMLElement): TableIndexes {
     const table = tbody.closest('table') as HTMLTableElement | null;
     const headers = table ? (Array.from(table.querySelectorAll('thead th')) as HTMLElement[]) : [];
-
-    const normalizedHeaders = headers.map((th) => normalizeText(th.textContent ?? ''));
-
-    const findHeader = (...needles: string[]): number | null => {
-      const index = normalizedHeaders.findIndex((text) =>
-        needles.some((needle) => text.includes(needle))
-      );
-
-      return index >= 0 ? index : null;
-    };
-
-    return {
-      type: findHeader('tipo y serie') ?? 2,
-      access: findHeader('clave de acceso', 'autorizacion') ?? 3,
-      xml: findHeader('documento') ?? 9,
-      pdf: findHeader('ride') ?? 10
-    };
+    return buildTableIndexes(headers.map((th) => th.textContent ?? ''));
   }
 
   function extractRowData(row: HTMLTableRowElement, indexes: TableIndexes): RowData {
@@ -805,18 +795,12 @@ function ensurePeriodsMatchCurrentSelection() {
     const pdfCell = cells[indexes.pdf] || cells[10] || null;
 
     const accessText = accessCell ? accessCell.textContent || '' : row.textContent || '';
-    const accessKeyMatch = accessText.match(/\b\d{49}\b/);
-    const accessKey = accessKeyMatch ? accessKeyMatch[0] : null;
+    const accessKey = extractAccessKeyFromText(accessText);
 
     let documentNumber = null;
 
     if (typeCell) {
-      const typeText = normalizeSpaces(typeCell.textContent || '');
-      const docMatch = typeText.match(/(\d{3})\s*-\s*(\d{3})\s*-\s*(\d{9})/);
-
-      if (docMatch) {
-        documentNumber = `${docMatch[1]}${docMatch[2]}${docMatch[3]}`;
-      }
+      documentNumber = extractDocumentNumberFromTypeText(typeCell.textContent || '');
     }
 
     return {
@@ -1026,13 +1010,7 @@ function ensurePeriodsMatchCurrentSelection() {
       .filter((row) => row.querySelector('td'))
       .filter((row) => getComputedStyle(row).display !== 'none');
 
-    const queue: Array<{
-      row: HTMLTableRowElement;
-      link: HTMLAnchorElement;
-      accessCell: HTMLElement | null;
-      accessKey: string | null;
-      file: 'xml' | 'pdf';
-    }> = [];
+    const candidates = [];
 
     for (const row of rows) {
       const rowData = extractRowData(row, indexes);
@@ -1045,10 +1023,9 @@ function ensurePeriodsMatchCurrentSelection() {
       const xmlAvailable = isAvailable(invoice.xml_status);
       const pdfOk = isPdfOk(invoice.pdf_status);
 
-      const downloaded =
-        invoice.downloaded === true ||
-        (CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable) ||
-        (xmlAvailable && pdfOk);
+      const downloaded = shouldTreatAsDownloaded(invoice, {
+        hideWhenXmlIsAvailable: CONFIG.HIDE_WHEN_XML_IS_AVAILABLE,
+      });
 
       if (downloaded) {
         continue;
@@ -1057,28 +1034,23 @@ function ensurePeriodsMatchCurrentSelection() {
       const xmlLink = rowData.xmlCell?.querySelector('a[id*="lnkXml"]') as HTMLAnchorElement | null;
       const pdfLink = rowData.pdfCell?.querySelector('a[id*="lnkPdf"]') as HTMLAnchorElement | null;
 
-      if (CONFIG.AUTO_DOWNLOAD_XML && !xmlAvailable && xmlLink) {
-        queue.push({
-          row,
-          link: xmlLink,
-          accessCell: rowData.accessCell,
-          accessKey: rowData.accessKey,
-          file: 'xml'
-        });
-      }
-
-      if (CONFIG.AUTO_DOWNLOAD_PDF && !pdfOk && pdfLink) {
-        queue.push({
-          row,
-          link: pdfLink,
-          accessCell: rowData.accessCell,
-          accessKey: rowData.accessKey,
-          file: 'pdf'
-        });
-      }
+      candidates.push({
+        row,
+        accessCell: rowData.accessCell,
+        accessKey: rowData.accessKey,
+        downloaded,
+        xmlAvailable,
+        pdfOk,
+        xmlLink,
+        pdfLink,
+      });
     }
 
-    return queue.slice(0, CONFIG.MAX_BATCH_DOWNLOADS_PER_PAGE);
+    return buildDownloadQueue(candidates, {
+      autoDownloadXml: CONFIG.AUTO_DOWNLOAD_XML,
+      autoDownloadPdf: CONFIG.AUTO_DOWNLOAD_PDF,
+      maxBatchDownloadsPerPage: CONFIG.MAX_BATCH_DOWNLOADS_PER_PAGE,
+    });
   }
 
   function startBatchDownloadCurrentPage() {

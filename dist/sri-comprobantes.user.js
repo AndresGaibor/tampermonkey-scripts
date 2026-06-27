@@ -66,6 +66,55 @@
 			byDocumentNumber
 		};
 	}
+	function buildTableIndexes(headers) {
+		const normalizedHeaders = headers.map((header) => normalizeText(header));
+		const findHeader = (...needles) => {
+			const index = normalizedHeaders.findIndex((text) => needles.some((needle) => text.includes(needle)));
+			return index >= 0 ? index : null;
+		};
+		return {
+			type: findHeader("tipo y serie") ?? 2,
+			access: findHeader("clave de acceso", "autorizacion") ?? 3,
+			xml: findHeader("documento") ?? 9,
+			pdf: findHeader("ride") ?? 10
+		};
+	}
+	function extractAccessKeyFromText(text) {
+		const accessKeyMatch = text.match(/\b\d{49}\b/);
+		return accessKeyMatch ? accessKeyMatch[0] : null;
+	}
+	function extractDocumentNumberFromTypeText(text) {
+		const docMatch = normalizeSpaces(text).match(/(\d{3})\s*-\s*(\d{3})\s*-\s*(\d{9})/);
+		if (!docMatch) return null;
+		return `${docMatch[1]}${docMatch[2]}${docMatch[3]}`;
+	}
+	function shouldTreatAsDownloaded(invoice, config) {
+		const xmlAvailable = String(invoice.xml_status ?? "").toLowerCase() === "available";
+		const pdfValue = String(invoice.pdf_status ?? "").toLowerCase();
+		const pdfOk = pdfValue !== "" && pdfValue !== "missing";
+		return Boolean(invoice.downloaded === true || config.hideWhenXmlIsAvailable && xmlAvailable || xmlAvailable && pdfOk);
+	}
+	function buildDownloadQueue(candidates, config) {
+		const queue = [];
+		for (const candidate of candidates) {
+			if (candidate.downloaded) continue;
+			if (config.autoDownloadXml && !candidate.xmlAvailable && candidate.xmlLink) queue.push({
+				row: candidate.row,
+				link: candidate.xmlLink,
+				accessCell: candidate.accessCell,
+				accessKey: candidate.accessKey,
+				file: "xml"
+			});
+			if (config.autoDownloadPdf && !candidate.pdfOk && candidate.pdfLink) queue.push({
+				row: candidate.row,
+				link: candidate.pdfLink,
+				accessCell: candidate.accessCell,
+				accessKey: candidate.accessKey,
+				file: "pdf"
+			});
+		}
+		return queue.slice(0, config.maxBatchDownloadsPerPage);
+	}
 	function isAvailable(status) {
 		return String(status ?? "").toLowerCase() === "available";
 	}
@@ -500,7 +549,7 @@
 				}
 				const xmlAvailable = isAvailable$1(invoice.xml_status);
 				const pdfOk = isPdfOk$1(invoice.pdf_status);
-				if (invoice.downloaded === true || CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable || xmlAvailable && pdfOk) {
+				if (shouldTreatAsDownloaded(invoice, { hideWhenXmlIsAvailable: CONFIG.HIDE_WHEN_XML_IS_AVAILABLE })) {
 					pageStats.downloaded++;
 					row.classList.add("tm-sri-row-downloaded");
 					upsertRowBadge(row, rowData.accessCell, "Descargado en sistema", "downloaded");
@@ -537,17 +586,7 @@
 		}
 		function getTableIndexes(tbody) {
 			const table = tbody.closest("table");
-			const normalizedHeaders = (table ? Array.from(table.querySelectorAll("thead th")) : []).map((th) => normalizeText(th.textContent ?? ""));
-			const findHeader = (...needles) => {
-				const index = normalizedHeaders.findIndex((text) => needles.some((needle) => text.includes(needle)));
-				return index >= 0 ? index : null;
-			};
-			return {
-				type: findHeader("tipo y serie") ?? 2,
-				access: findHeader("clave de acceso", "autorizacion") ?? 3,
-				xml: findHeader("documento") ?? 9,
-				pdf: findHeader("ride") ?? 10
-			};
+			return buildTableIndexes((table ? Array.from(table.querySelectorAll("thead th")) : []).map((th) => th.textContent ?? ""));
 		}
 		function extractRowData(row, indexes) {
 			const cells = Array.from(row.children);
@@ -555,13 +594,9 @@
 			const accessCell = cells[indexes.access] || cells[3] || null;
 			const xmlCell = cells[indexes.xml] || cells[9] || null;
 			const pdfCell = cells[indexes.pdf] || cells[10] || null;
-			const accessKeyMatch = (accessCell ? accessCell.textContent || "" : row.textContent || "").match(/\b\d{49}\b/);
-			const accessKey = accessKeyMatch ? accessKeyMatch[0] : null;
+			const accessKey = extractAccessKeyFromText(accessCell ? accessCell.textContent || "" : row.textContent || "");
 			let documentNumber = null;
-			if (typeCell) {
-				const docMatch = normalizeSpaces(typeCell.textContent || "").match(/(\d{3})\s*-\s*(\d{3})\s*-\s*(\d{9})/);
-				if (docMatch) documentNumber = `${docMatch[1]}${docMatch[2]}${docMatch[3]}`;
-			}
+			if (typeCell) documentNumber = extractDocumentNumberFromTypeText(typeCell.textContent || "");
 			return {
 				row,
 				cells,
@@ -694,32 +729,33 @@
 			if (!tbody) return [];
 			const indexes = getTableIndexes(tbody);
 			const rows = Array.from(tbody.querySelectorAll("tr[role=\"row\"], tr")).filter((row) => row.querySelector("td")).filter((row) => getComputedStyle(row).display !== "none");
-			const queue = [];
+			const candidates = [];
 			for (const row of rows) {
 				const rowData = extractRowData(row, indexes);
 				const invoice = findMatchingInvoice(rowData);
 				if (!invoice) continue;
 				const xmlAvailable = isAvailable$1(invoice.xml_status);
 				const pdfOk = isPdfOk$1(invoice.pdf_status);
-				if (invoice.downloaded === true || CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable || xmlAvailable && pdfOk) continue;
+				const downloaded = shouldTreatAsDownloaded(invoice, { hideWhenXmlIsAvailable: CONFIG.HIDE_WHEN_XML_IS_AVAILABLE });
+				if (downloaded) continue;
 				const xmlLink = rowData.xmlCell?.querySelector("a[id*=\"lnkXml\"]");
 				const pdfLink = rowData.pdfCell?.querySelector("a[id*=\"lnkPdf\"]");
-				if (CONFIG.AUTO_DOWNLOAD_XML && !xmlAvailable && xmlLink) queue.push({
+				candidates.push({
 					row,
-					link: xmlLink,
 					accessCell: rowData.accessCell,
 					accessKey: rowData.accessKey,
-					file: "xml"
-				});
-				if (CONFIG.AUTO_DOWNLOAD_PDF && !pdfOk && pdfLink) queue.push({
-					row,
-					link: pdfLink,
-					accessCell: rowData.accessCell,
-					accessKey: rowData.accessKey,
-					file: "pdf"
+					downloaded,
+					xmlAvailable,
+					pdfOk,
+					xmlLink,
+					pdfLink
 				});
 			}
-			return queue.slice(0, CONFIG.MAX_BATCH_DOWNLOADS_PER_PAGE);
+			return buildDownloadQueue(candidates, {
+				autoDownloadXml: CONFIG.AUTO_DOWNLOAD_XML,
+				autoDownloadPdf: CONFIG.AUTO_DOWNLOAD_PDF,
+				maxBatchDownloadsPerPage: CONFIG.MAX_BATCH_DOWNLOADS_PER_PAGE
+			});
 		}
 		function startBatchDownloadCurrentPage() {
 			startBatchDownload({ acrossPages: false });
