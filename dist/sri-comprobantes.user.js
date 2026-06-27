@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SRI - Comprobantes sincronizados manual
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      2026.6.12.9
+// @version      2026.6.12.10
 // @author       Andres
 // @description  Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==

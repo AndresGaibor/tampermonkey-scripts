@@ -5,7 +5,7 @@ export const scripts = {
     userscript: {
       name: 'SRI - Comprobantes sincronizados manual',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '2026.6.12.9',
+      version: '2026.6.12.10',
       description:
         'Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.',
       author: 'Andres',
@@ -45,7 +45,7 @@ export const scripts = {
     userscript: {
       name: 'Better ChatGPT Assistant (asistente multifunción mejorado para ChatGPT web)',
       namespace: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
-      version: '8.2.3.5',
+      version: '8.2.3.6',
       description:
         'Better ChatGPT Assistant con Virtual Scroll Engine 6.0: chats largos ultra fluidos, exportación, monitor de tokens, i18n y más.',
       homepageURL: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
