@@ -83,10 +83,13 @@ describe('deuna-outlook badges', () => {
     const originalLocation = globalThis.location;
     const originalSetInterval = globalThis.setInterval;
     const originalLocalStorage = globalThis.localStorage;
+    const originalFetch = globalThis.fetch;
+    const originalGm = globalThis.GM_xmlhttpRequest;
 
     globalThis.document = documentMock;
     globalThis.location = { href: 'https://outlook.office.com/mail/' } as Location;
     globalThis.setInterval = (() => 0) as typeof setInterval;
+    globalThis.GM_xmlhttpRequest = undefined;
     globalThis.localStorage = {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -103,9 +106,12 @@ describe('deuna-outlook badges', () => {
         return store.size;
       },
     } as Storage;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })) as typeof fetch;
 
     try {
       await import('../scripts/deuna-outlook/src/main.ts');
+      await Promise.resolve();
+      await Promise.resolve();
 
       const badge = option.querySelector(':scope > .deuna-sent-badge');
       expect(badge).not.toBeNull();
@@ -115,6 +121,8 @@ describe('deuna-outlook badges', () => {
       globalThis.location = originalLocation;
       globalThis.setInterval = originalSetInterval;
       globalThis.localStorage = originalLocalStorage;
+      globalThis.fetch = originalFetch;
+      globalThis.GM_xmlhttpRequest = originalGm;
     }
   });
 
