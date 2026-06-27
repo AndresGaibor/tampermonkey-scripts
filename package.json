@@ -10,6 +10,8 @@
     "build:sri": "bun tools/vite.mjs build sri-comprobantes",
     "dev:demo": "bun tools/vite.mjs dev demo-current-site",
     "build:demo": "bun tools/vite.mjs build demo-current-site",
+    "dev:better-chatgpt-assistant": "bun tools/vite.mjs dev better-chatgpt-assistant",
+    "build:better-chatgpt-assistant": "bun tools/vite.mjs build better-chatgpt-assistant",
     "build:all": "bun tools/build-all.mjs",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"

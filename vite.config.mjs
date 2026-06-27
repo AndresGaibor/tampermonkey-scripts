@@ -38,7 +38,7 @@ export default defineConfig({
         ...script.userscript,
         updateURL: `${rawBase}/${script.fileName}`,
         downloadURL: `${rawBase}/${script.fileName}`,
-        supportURL: supportBase,
+        supportURL: script.userscript.supportURL || supportBase,
       },
       server: {
         open: true,
