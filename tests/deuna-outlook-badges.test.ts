@@ -226,4 +226,108 @@ describe('deuna-outlook badges', () => {
       globalThis.GM_xmlhttpRequest = originalGm;
     }
   });
+
+  test('repinta badges cuando Outlook recrea filas al hacer scroll', async () => {
+    const option = new FakeElement('article') as unknown as HTMLElement;
+    option.setAttribute('role', 'option');
+    option.setAttribute(
+      'aria-label',
+      'notificaciones@deunaapp.com ¡Listo! Recargaste $9,00 en tu cuenta Deuna ✅ Mar 23/6 Andres Alexander Gaibor Recargaste $9,00 de saldo a tu cuenta Deuna Detalles de la transacción Monto $9,00 USD Motivo Recarga Fecha 23 jun 2026 - 09h10 Número de transacción 999',
+    );
+
+    const store = new Map<string, string>([
+      ['deuna_sent_signatures', JSON.stringify(['notificaciones deunaapp com|9 00|usd|recarga|23 jun 2026 09h10'])],
+    ]);
+    let currentOptions: HTMLElement[] = [];
+    let mutationCallback: MutationCallback | undefined;
+    let scrollListener: EventListener | undefined;
+
+    const documentMock = {
+      readyState: 'complete',
+      title: 'Inbox - Outlook',
+      body: {
+        textContent: '',
+        appendChild: () => option,
+      },
+      getElementById: () => null,
+      addEventListener: (eventName: string, listener: EventListener) => {
+        if (eventName === 'scroll') scrollListener = listener;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector === '[role="option"][aria-label]') return currentOptions;
+        return [];
+      },
+      querySelector: () => null,
+      createElement: (tagName: string) => new FakeElement(tagName),
+    } as unknown as Document;
+
+    const originalDocument = globalThis.document;
+    const originalLocation = globalThis.location;
+    const originalSetInterval = globalThis.setInterval;
+    const originalLocalStorage = globalThis.localStorage;
+    const originalFetch = globalThis.fetch;
+    const originalGm = globalThis.GM_xmlhttpRequest;
+    const originalMutationObserver = globalThis.MutationObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+
+    globalThis.document = documentMock;
+    globalThis.location = { href: 'https://outlook.office.com/mail/' } as Location;
+    globalThis.setInterval = (() => 0) as typeof setInterval;
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    }) as typeof requestAnimationFrame;
+    globalThis.GM_xmlhttpRequest = undefined;
+    globalThis.MutationObserver = class {
+      constructor(callback: MutationCallback) {
+        mutationCallback = callback;
+      }
+
+      observe() {}
+      disconnect() {}
+      takeRecords() { return []; }
+    } as typeof MutationObserver;
+    globalThis.localStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      clear: () => {
+        store.clear();
+      },
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() {
+        return store.size;
+      },
+    } as Storage;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })) as typeof fetch;
+
+    try {
+      await import('../scripts/deuna-outlook/src/main.ts?scroll-mutation');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      currentOptions = [option];
+      expect(mutationCallback).toBeDefined();
+      expect(scrollListener).toBeDefined();
+      mutationCallback?.([], {} as MutationObserver);
+      scrollListener?.({ type: 'scroll' } as Event);
+
+      const badge = option.querySelector(':scope > .deuna-sent-badge');
+      expect(badge).not.toBeNull();
+      expect(badge?.textContent).toBe('Enviado');
+    } finally {
+      globalThis.document = originalDocument;
+      globalThis.location = originalLocation;
+      globalThis.setInterval = originalSetInterval;
+      globalThis.localStorage = originalLocalStorage;
+      globalThis.fetch = originalFetch;
+      globalThis.GM_xmlhttpRequest = originalGm;
+      globalThis.MutationObserver = originalMutationObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
 });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.10
+// @version      1.0.11
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -491,8 +491,43 @@
 		document.body.appendChild(btn);
 	}
 	var lastUrl = location.href;
+	var mailListObserverStarted = false;
+	var mailListScrollStarted = false;
+	var badgeRefreshScheduled = false;
+	function scheduleBadgeRefresh() {
+		if (badgeRefreshScheduled) return;
+		badgeRefreshScheduled = true;
+		const refresh = () => {
+			badgeRefreshScheduled = false;
+			updateMailListBadges();
+			updateReadingPaneBadge();
+		};
+		if (typeof requestAnimationFrame === "function") {
+			requestAnimationFrame(refresh);
+			return;
+		}
+		setTimeout(refresh, 0);
+	}
+	function observeOutlookMutations() {
+		if (mailListObserverStarted || typeof MutationObserver === "undefined") return;
+		mailListObserverStarted = true;
+		new MutationObserver(scheduleBadgeRefresh).observe(document.body, {
+			childList: true,
+			subtree: true
+		});
+	}
+	function observeOutlookScroll() {
+		if (mailListScrollStarted) return;
+		mailListScrollStarted = true;
+		document.addEventListener("scroll", scheduleBadgeRefresh, {
+			capture: true,
+			passive: true
+		});
+	}
 	function startPolling() {
 		addUI();
+		observeOutlookMutations();
+		observeOutlookScroll();
 		hydrateSentReceipts();
 		updateMailListBadges();
 		updateReadingPaneBadge();

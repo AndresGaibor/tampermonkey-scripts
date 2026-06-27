@@ -614,9 +614,47 @@ function addUI(): void {
 }
 
 let lastUrl = location.href;
+let mailListObserverStarted = false;
+let mailListScrollStarted = false;
+let badgeRefreshScheduled = false;
+
+function scheduleBadgeRefresh(): void {
+  if (badgeRefreshScheduled) return;
+  badgeRefreshScheduled = true;
+
+  const refresh = () => {
+    badgeRefreshScheduled = false;
+    updateMailListBadges();
+    updateReadingPaneBadge();
+  };
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(refresh);
+    return;
+  }
+
+  setTimeout(refresh, 0);
+}
+
+function observeOutlookMutations(): void {
+  if (mailListObserverStarted || typeof MutationObserver === 'undefined') return;
+  mailListObserverStarted = true;
+
+  const observer = new MutationObserver(scheduleBadgeRefresh);
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function observeOutlookScroll(): void {
+  if (mailListScrollStarted) return;
+  mailListScrollStarted = true;
+
+  document.addEventListener('scroll', scheduleBadgeRefresh, { capture: true, passive: true });
+}
 
 function startPolling(): void {
   addUI();
+  observeOutlookMutations();
+  observeOutlookScroll();
   void hydrateSentReceipts();
   updateMailListBadges();
   updateReadingPaneBadge();

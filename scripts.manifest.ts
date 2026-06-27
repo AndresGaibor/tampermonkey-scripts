@@ -30,7 +30,7 @@ export const scripts = {
     userscript: {
       name: 'Deuna Outlook → SriCache',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '1.0.10',
+      version: '1.0.11',
       description: 'Extrae recargas Deuna desde Outlook Web y las envía a SriCache',
       author: 'SriCache',
       match: [
