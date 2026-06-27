@@ -1,6 +1,21 @@
 import { clamp } from '../../../shared/math.ts';
-
 'use strict';
+
+import {
+  domLevel as domLevelDomain,
+  estimateRemainingTurns as estimateRemainingTurnsDomain,
+  memoryLevel as memoryLevelDomain,
+  modeLabel as modeLabelDomain,
+  suggestionText as suggestionTextDomain,
+} from './lib/health.ts';
+import {
+  loadBool as loadBoolStorage,
+  loadMode as loadModeStorage,
+  loadPos as loadPosStorage,
+  saveBool as saveBoolStorage,
+  saveMode as saveModeStorage,
+  savePos as savePosStorage,
+} from './lib/storage.ts';
 
   const CHECK_INTERVAL_MS = 1100;
   const ROUTE_GUARD_MS = 800;
@@ -22,7 +37,7 @@ import { clamp } from '../../../shared/math.ts';
   const FORCE_CLEAN_MARGIN_SCREENS = 0.4;
 
   const LANG_KEY = 'vs_lang';
-  let lang = localStorage.getItem(LANG_KEY) || 'zh';
+  let lang: 'zh' | 'en' = (localStorage.getItem(LANG_KEY) as 'zh' | 'en') || 'zh';
 
   const I18N = {
     zh: {
@@ -85,44 +100,28 @@ import { clamp } from '../../../shared/math.ts';
   }
 
   function loadBool(key, def) {
-    const v = localStorage.getItem(key);
-    if (v === null || v === undefined) return def;
-    return v === '1';
+    return loadBoolStorage(localStorage, key, def);
   }
 
   function saveBool(key, val) {
-    localStorage.setItem(key, val ? '1' : '0');
+    saveBoolStorage(localStorage, key, val);
   }
 
   function loadMode() {
-    const v = localStorage.getItem(KEY_MODE);
-    return (v === 'performance' || v === 'balanced' || v === 'conservative') ? v : 'balanced';
+    return loadModeStorage(localStorage);
   }
 
   function saveMode(mode) {
     currentMode = mode;
-    localStorage.setItem(KEY_MODE, mode);
+    saveModeStorage(localStorage, mode);
   }
 
   function loadPos() {
-    try {
-      const raw = localStorage.getItem(KEY_POS);
-      if (!raw) return { x: 18, y: 64, side: 'left', hidden: false };
-      const p = JSON.parse(raw);
-      if (typeof p.x === 'number' && typeof p.y === 'number') {
-        return {
-          x: clamp(p.x, 0, window.innerWidth - 40),
-          y: clamp(p.y, 0, window.innerHeight - 40),
-          side: p.side === 'right' ? 'right' : 'left',
-          hidden: !!p.hidden,
-        };
-      }
-    } catch {}
-    return { x: 18, y: 64, side: 'left', hidden: false };
+    return loadPosStorage(localStorage, window.innerWidth, window.innerHeight);
   }
 
   function savePos() {
-    localStorage.setItem(KEY_POS, JSON.stringify(pinnedPos));
+    savePosStorage(localStorage, pinnedPos);
   }
 
   function getMarginScreens() {
@@ -136,85 +135,44 @@ import { clamp } from '../../../shared/math.ts';
   }
 
   function memoryLevel(usedMB) {
-    if (usedMB == null) return { label: lang === 'zh' ? 'No disponible' : 'N/A', level: 'na' };
-    if (usedMB < MEM_STABLE_MB) return { label: `${usedMB.toFixed(0)}MB${lang === 'zh' ? ' (estable y fluido)' : ' (OK)'}`, level: 'ok' };
-    if (usedMB < MEM_WARNING_MB) return { label: `${usedMB.toFixed(0)}MB${lang === 'zh' ? ' (alto, puede ir lento)' : ' (High)'}`, level: 'warn' };
-    return { label: `${usedMB.toFixed(0)}MB${lang === 'zh' ? ' (riesgo de bloqueo)' : ' (Warn)'}`, level: 'bad' };
+    return memoryLevelDomain(usedMB, lang);
   }
 
   function domLevel(domNodes) {
-    if (domNodes < DOM_OK) return { label: `${domNodes}`, level: 'ok' };
-    if (domNodes < DOM_WARN) return { label: `${domNodes}`, level: 'warn' };
-    return { label: `${domNodes}`, level: 'bad' };
+    return domLevelDomain(domNodes);
   }
 
   function estimateRemainingTurns(usedMB, turns) {
-    if (usedMB == null || !turns || turns < 12) return null;
-    const avg = usedMB / turns;
-    if (!isFinite(avg) || avg <= 0) return null;
-    const headroom = MEM_WARNING_MB - usedMB;
-    const remaining = Math.floor(headroom / avg);
-    return clamp(remaining, 0, 9999);
+    return estimateRemainingTurnsDomain(usedMB, turns);
   }
 
   function modeLabel(mode) {
-    if (lang === 'en') {
-      if (mode === 'performance') return 'performance';
-      if (mode === 'balanced') return 'balanced';
-      if (mode === 'conservative') return 'conservative';
-      return 'Balanced';
-    }
-    if (mode === 'conservative') return 'Conservador c';
-    if (mode === 'balanced') return 'Equilibrado b';
-    if (mode === 'performance') return 'Rendimiento a';
-    return 'Equilibrado';
+    return modeLabelDomain(mode, lang);
   }
 
   function suggestionText(domNodes, usedMB, virtCount, turns) {
-    const mem = memoryLevel(usedMB).level;
-    const dom = domLevel(domNodes).level;
-
-    if (!virtualizationEnabled) {
-      return lang === 'zh'
-        ? 'Consejo: la virtualización está pausada. El historial completo queda visible, pero los chats largos pueden ponerse lentos. Actívala cuando necesites fluidez.'
-        : 'Tip: Virtualization is paused. Full history is visible, but long chats may lag. Enable it for smooth scrolling.';
-    }
-
-    if (ctrlFFreeze) {
-      return lang === 'zh'
-        ? 'Consejo: estás usando la búsqueda del navegador (Ctrl+F). La virtualización se pausó para permitir buscar en todo el historial. Se restaurará automáticamente al salir de la búsqueda.'
-        : 'Tip: Browser Find (Ctrl+F) is active. Virtualization is paused so you can search all history. It will resume after you exit Find.';
-    }
-
-    if (mem === 'bad' || dom === 'bad') {
-      return lang === 'zh'
-        ? 'Consejo: la página entró en zona de lentitud. Pulsa “Optimizar ahora” para reducir la carga; exporta o respalda el contenido importante antes de refrescar o abrir una nueva conversación.'
-        : 'Tip: Near lag zone. Click “Optimize Now” to reduce load. Export/backup important content before refreshing or starting a new chat.';
-    }
-    if (mem === 'warn' || dom === 'warn') {
-      return lang === 'zh'
-        ? 'Consejo: la carga está alta, pero puedes seguir conversando. Evita desplazarte mucho por el historial de una sola vez; para revisar contenido antiguo puedes cambiar temporalmente a “Conservador”.'
-        : 'Tip: Load is higher but still OK. Avoid long scroll sessions. Switch to “Conservative” when browsing old history.';
-    }
-    if (virtCount > 0 && turns > 220) {
-      return lang === 'zh'
-        ? 'Consejo: el estado es bueno. Para buscar contenido antiguo, usa la búsqueda o exporta el chat; evita bajar repetidamente hasta el final.'
-        : 'Tip: Healthy. Use search or export to view old history, instead of repeatedly scrolling to the bottom.';
-    }
-    return lang === 'zh' ? 'Consejo: el estado es bueno.' : 'Tip: Healthy.';
+    return suggestionTextDomain({
+      virtualizationEnabled,
+      ctrlFFreeze,
+      domNodes,
+      usedMB,
+      virtCount,
+      turns,
+      lang,
+    });
   }
 
-  function getMessageNodes() {
+  function getMessageNodes(): HTMLElement[] {
     let nodes = document.querySelectorAll('div[data-message-id]');
-    if (nodes && nodes.length) return Array.from(nodes);
+    if (nodes && nodes.length) return Array.from(nodes) as HTMLElement[];
 
     nodes = document.querySelectorAll('[data-testid="conversation-turn"]');
-    if (nodes && nodes.length) return Array.from(nodes);
+    if (nodes && nodes.length) return Array.from(nodes) as HTMLElement[];
 
     const main = document.querySelector('main');
     if (!main) return [];
     nodes = main.querySelectorAll('div[role="presentation"]');
-    return nodes && nodes.length ? Array.from(nodes) : [];
+    return nodes && nodes.length ? (Array.from(nodes) as HTMLElement[]) : [];
   }
 
   function unvirtualizeAll() {
@@ -326,13 +284,13 @@ import { clamp } from '../../../shared/math.ts';
 
     document.addEventListener('input', (e) => {
       if (!e || !e.target) return;
-      const el = e.target;
+      const el = e.target as HTMLElement | null;
       const tag = (el.tagName || '').toLowerCase();
       if (tag === 'textarea' || tag === 'input') dim();
     }, true);
 
     document.addEventListener('focusin', (e) => {
-      const el = e.target;
+      const el = e.target as HTMLElement | null;
       if (!el) return;
       const tag = (el.tagName || '').toLowerCase();
       if (tag === 'textarea' || tag === 'input') dim();
@@ -348,7 +306,7 @@ import { clamp } from '../../../shared/math.ts';
 
   function installImageLoadHook() {
     window.addEventListener('load', (e) => {
-      const t = e && e.target;
+      const t = (e && e.target) as HTMLImageElement | null;
       if (t && t.tagName && t.tagName.toLowerCase() === 'img') {
         setTimeout(() => scheduleVirtualize(), IMAGE_LOAD_RETRY_MS);
       }

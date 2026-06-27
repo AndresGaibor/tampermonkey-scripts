@@ -39,6 +39,40 @@
 			timer = setTimeout(() => fn(...args), delayMs);
 		};
 	}
+	function buildDocumentNumber(invoice) {
+		const series = onlyDigits(invoice.series ?? "");
+		const sequential = onlyDigits(invoice.sequential ?? "");
+		if (!series || !sequential) return null;
+		return `${series}${sequential}`;
+	}
+	function getDocumentNumberFromAccessKey(accessKey) {
+		const key = onlyDigits(accessKey ?? "");
+		if (key.length < 39) return null;
+		return `${key.slice(24, 30)}${key.slice(30, 39)}`;
+	}
+	function buildInvoiceIndexes(invoices) {
+		const byAccessKey = new Map();
+		const byDocumentNumber = new Map();
+		for (const invoice of invoices) {
+			const accessKey = onlyDigits(invoice.access_key ?? "");
+			if (accessKey) byAccessKey.set(accessKey, invoice);
+			const documentNumber = buildDocumentNumber(invoice);
+			if (documentNumber) byDocumentNumber.set(documentNumber, invoice);
+			const documentNumberFromAccessKey = getDocumentNumberFromAccessKey(accessKey);
+			if (documentNumberFromAccessKey) byDocumentNumber.set(documentNumberFromAccessKey, invoice);
+		}
+		return {
+			byAccessKey,
+			byDocumentNumber
+		};
+	}
+	function isAvailable(status) {
+		return String(status ?? "").toLowerCase() === "available";
+	}
+	function isPdfOk(status) {
+		const value = String(status ?? "").toLowerCase();
+		return value !== "" && value !== "missing";
+	}
 	(function() {
 		"use strict";
 		if (!location.pathname.includes("/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf")) return;
@@ -383,16 +417,9 @@
 			if (!state.isRefreshingPeriods) refreshPeriodsFromApi(true);
 		}
 		function indexInvoices(invoices) {
-			state.byAccessKey.clear();
-			state.byDocumentNumber.clear();
-			for (const invoice of invoices) {
-				const accessKey = onlyDigits(invoice.access_key || "");
-				if (accessKey) state.byAccessKey.set(accessKey, invoice);
-				const docNumber = buildDocumentNumber(invoice);
-				if (docNumber) state.byDocumentNumber.set(docNumber, invoice);
-				const docNumberFromAccessKey = getDocumentNumberFromAccessKey(accessKey);
-				if (docNumberFromAccessKey) state.byDocumentNumber.set(docNumberFromAccessKey, invoice);
-			}
+			const indexes = buildInvoiceIndexes(invoices);
+			state.byAccessKey = indexes.byAccessKey;
+			state.byDocumentNumber = indexes.byDocumentNumber;
 			console.log("[SRI TM] Facturas indexadas:", {
 				accessKeys: state.byAccessKey.size,
 				documentNumbers: state.byDocumentNumber.size
@@ -402,17 +429,6 @@
 			state.monthsByNumber.clear();
 			for (const month of months) state.monthsByNumber.set(Number(month.month), month);
 			console.log("[SRI TM] Meses indexados:", state.monthsByNumber.size);
-		}
-		function buildDocumentNumber(invoice) {
-			const series = onlyDigits(invoice.series || "");
-			const sequential = onlyDigits(invoice.sequential || "");
-			if (!series || !sequential) return null;
-			return `${series}${sequential}`;
-		}
-		function getDocumentNumberFromAccessKey(accessKey) {
-			const key = onlyDigits(accessKey);
-			if (key.length < 39) return null;
-			return `${key.slice(24, 30)}${key.slice(30, 39)}`;
 		}
 		function applyMonthVisibility() {
 			const monthSelect = document.getElementById("frmPrincipal:mes");
@@ -482,8 +498,8 @@
 					}
 					continue;
 				}
-				const xmlAvailable = isAvailable(invoice.xml_status);
-				const pdfOk = isPdfOk(invoice.pdf_status);
+				const xmlAvailable = isAvailable$1(invoice.xml_status);
+				const pdfOk = isPdfOk$1(invoice.pdf_status);
 				if (invoice.downloaded === true || CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable || xmlAvailable && pdfOk) {
 					pageStats.downloaded++;
 					row.classList.add("tm-sri-row-downloaded");
@@ -566,12 +582,11 @@
 			row.classList.remove("tm-sri-row-downloaded", "tm-sri-row-missing", "tm-sri-row-unknown", "tm-sri-row-hidden", "tm-sri-row-processing");
 			row.style.removeProperty("display");
 		}
-		function isAvailable(status) {
-			return String(status || "").toLowerCase() === "available";
+		function isAvailable$1(status) {
+			return isAvailable(status);
 		}
-		function isPdfOk(status) {
-			const value = String(status || "").toLowerCase();
-			return value !== "" && value !== "missing";
+		function isPdfOk$1(status) {
+			return isPdfOk(status);
 		}
 		function replaceDownloadCell(cell, label, type) {
 			if (!cell) return;
@@ -684,8 +699,8 @@
 				const rowData = extractRowData(row, indexes);
 				const invoice = findMatchingInvoice(rowData);
 				if (!invoice) continue;
-				const xmlAvailable = isAvailable(invoice.xml_status);
-				const pdfOk = isPdfOk(invoice.pdf_status);
+				const xmlAvailable = isAvailable$1(invoice.xml_status);
+				const pdfOk = isPdfOk$1(invoice.pdf_status);
 				if (invoice.downloaded === true || CONFIG.HIDE_WHEN_XML_IS_AVAILABLE && xmlAvailable || xmlAvailable && pdfOk) continue;
 				const xmlLink = rowData.xmlCell?.querySelector("a[id*=\"lnkXml\"]");
 				const pdfLink = rowData.pdfCell?.querySelector("a[id*=\"lnkPdf\"]");

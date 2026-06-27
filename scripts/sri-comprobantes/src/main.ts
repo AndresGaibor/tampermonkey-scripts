@@ -9,6 +9,15 @@ import {
   onlyDigits,
 } from '../../../shared/text.ts';
 import { debounce } from '../../../shared/timing.ts';
+import {
+  buildDocumentNumber as buildDocumentNumberDomain,
+  buildInvoiceIndexes,
+  getDocumentNumberFromAccessKey as getDocumentNumberFromAccessKeyDomain,
+} from './domain/invoice-keys.ts';
+import {
+  isAvailable as isAvailableDomain,
+  isPdfOk as isPdfOkDomain,
+} from './domain/status.ts';
 
 (function () {
 'use strict';
@@ -544,28 +553,9 @@ function ensurePeriodsMatchCurrentSelection() {
 }
 
   function indexInvoices(invoices) {
-    state.byAccessKey.clear();
-    state.byDocumentNumber.clear();
-
-    for (const invoice of invoices) {
-      const accessKey = onlyDigits(invoice.access_key || '');
-
-      if (accessKey) {
-        state.byAccessKey.set(accessKey, invoice);
-      }
-
-      const docNumber = buildDocumentNumber(invoice);
-
-      if (docNumber) {
-        state.byDocumentNumber.set(docNumber, invoice);
-      }
-
-      const docNumberFromAccessKey = getDocumentNumberFromAccessKey(accessKey);
-
-      if (docNumberFromAccessKey) {
-        state.byDocumentNumber.set(docNumberFromAccessKey, invoice);
-      }
-    }
+    const indexes = buildInvoiceIndexes(invoices);
+    state.byAccessKey = indexes.byAccessKey;
+    state.byDocumentNumber = indexes.byDocumentNumber;
 
     console.log('[SRI TM] Facturas indexadas:', {
       accessKeys: state.byAccessKey.size,
@@ -584,27 +574,11 @@ function ensurePeriodsMatchCurrentSelection() {
   }
 
   function buildDocumentNumber(invoice) {
-    const series = onlyDigits(invoice.series || '');
-    const sequential = onlyDigits(invoice.sequential || '');
-
-    if (!series || !sequential) {
-      return null;
-    }
-
-    return `${series}${sequential}`;
+    return buildDocumentNumberDomain(invoice);
   }
 
   function getDocumentNumberFromAccessKey(accessKey) {
-    const key = onlyDigits(accessKey);
-
-    if (key.length < 39) {
-      return null;
-    }
-
-    const series = key.slice(24, 30);
-    const sequential = key.slice(30, 39);
-
-    return `${series}${sequential}`;
+    return getDocumentNumberFromAccessKeyDomain(accessKey);
   }
 
   function applyMonthVisibility() {
@@ -882,13 +856,11 @@ function ensurePeriodsMatchCurrentSelection() {
   }
 
   function isAvailable(status: unknown) {
-    return String(status || '').toLowerCase() === 'available';
+    return isAvailableDomain(status);
   }
 
   function isPdfOk(status: unknown) {
-    const value = String(status || '').toLowerCase();
-
-    return value !== '' && value !== 'missing';
+    return isPdfOkDomain(status);
   }
 
   function replaceDownloadCell(cell: HTMLElement | null, label: string, type: string) {
