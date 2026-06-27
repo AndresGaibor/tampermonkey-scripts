@@ -31,3 +31,44 @@
   background: #6b7280;
   cursor: not-allowed;
 }
+
+#MailList [role='option'] {
+  position: relative;
+  padding-inline-end: 96px;
+}
+
+#ConversationReadingPaneContainer,
+#ReadingPaneContainerId {
+  position: relative;
+}
+
+#MailList [role='option'] .deuna-sent-badge {
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+}
+
+#ConversationReadingPaneContainer .deuna-sent-badge,
+#ReadingPaneContainerId .deuna-sent-badge {
+  top: 12px;
+  right: 16px;
+}
+
+.deuna-sent-badge {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}

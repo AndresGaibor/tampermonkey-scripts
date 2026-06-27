@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.1
+// @version      1.0.2
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -38,9 +38,73 @@
 			return fallback;
 		}
 	}
-	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}");
+	_css("#deuna-sricache-btn{z-index:99999;color:#fff;cursor:pointer;background:#10b981;border:none;border-radius:8px;align-items:center;gap:8px;padding:10px 18px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;font-weight:600;transition:background .2s,transform .1s,opacity .2s;display:flex;position:fixed;bottom:16px;right:16px;box-shadow:0 4px 12px #00000026}#deuna-sricache-btn:hover{background:#059669}#deuna-sricache-btn:active{transform:scale(.95)}#deuna-sricache-btn:disabled{cursor:not-allowed;background:#6b7280}#MailList [role=option]{padding-inline-end:96px;position:relative}#ConversationReadingPaneContainer,#ReadingPaneContainerId{position:relative}#MailList [role=option] .deuna-sent-badge{top:50%;right:12px;transform:translateY(-50%)}#ConversationReadingPaneContainer .deuna-sent-badge,#ReadingPaneContainerId .deuna-sent-badge{top:12px;right:16px}.deuna-sent-badge{z-index:2;color:#047857;letter-spacing:.01em;pointer-events:none;background:#10b9811f;border:1px solid #10b98147;border-radius:999px;align-items:center;gap:4px;padding:3px 8px;font-size:11px;font-weight:600;line-height:1;display:inline-flex;position:absolute;box-shadow:0 1px 2px #0f172a0f}");
 	var SENT_KEY = "deuna_sent_txns";
+	var SENT_SIGNATURES_KEY = "deuna_sent_signatures";
 	var POLL_INTERVAL = 5e3;
+	var SENT_BADGE_TEXT = "Enviado";
+	function loadStringSet(storageKey) {
+		try {
+			const raw = localStorage.getItem(storageKey);
+			if (!raw) return new Set();
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) return new Set();
+			return new Set(parsed.filter((value) => typeof value === "string" && value.length > 0));
+		} catch {
+			return new Set();
+		}
+	}
+	function normalizeFingerprintValue(value) {
+		if (value === void 0 || value === null) return "";
+		return (typeof value === "number" ? value.toFixed(2) : value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+	}
+	function buildReceiptSignatures(data) {
+		const currency = data.currency || "USD";
+		const amount = typeof data.amount === "number" ? data.amount.toFixed(2) : "";
+		const variants = [
+			[
+				data.sender,
+				amount,
+				currency,
+				data.reason,
+				data.transactionDate,
+				data.customerName,
+				data.maskedId,
+				data.sourceAccount,
+				data.destinationAccount,
+				data.supportPhone
+			],
+			[
+				data.sender,
+				amount,
+				currency,
+				data.reason,
+				data.transactionDate,
+				data.customerName
+			],
+			[
+				data.sender,
+				amount,
+				currency,
+				data.reason,
+				data.transactionDate
+			],
+			[
+				data.sender,
+				amount,
+				currency,
+				data.reason
+			]
+		];
+		return [...new Set(variants.map((parts) => parts.map(normalizeFingerprintValue).filter(Boolean).join("|")).filter(Boolean))];
+	}
+	function getSentSignatures() {
+		return loadStringSet(SENT_SIGNATURES_KEY);
+	}
+	function isFingerprintLoaded(data) {
+		const sent = getSentSignatures();
+		return buildReceiptSignatures(data).some((signature) => sent.has(signature));
+	}
 	function getApiBase() {
 		try {
 			const val = getStoredValue("api_base", "");
@@ -102,11 +166,12 @@
 	}
 	function getReadingPaneText() {
 		for (const selector of [
-			"#selected-email",
-			"div[role=\"document\"]",
-			"[aria-label=\"Cuerpo del mensaje\"]",
+			"#ConversationReadingPaneContainer [id^=\"UniqueMessageBody_\"]",
+			"#ReadingPaneContainerId [id^=\"UniqueMessageBody_\"]",
 			"#ReadingPaneContainerId",
-			"#ItemHeader"
+			"#ConversationReadingPaneContainer",
+			"div[role=\"document\"]",
+			"[aria-label=\"Cuerpo del mensaje\"]"
 		]) {
 			const el = document.querySelector(selector);
 			if (el) {
@@ -136,23 +201,20 @@
 		const hasDeunaSender = text.includes("notificaciones@deunaapp.com");
 		return hasDeunaKeywords || hasDeunaSender && /Recargaste/i.test(text);
 	}
-	function extractFromPage() {
-		const { text } = getReadingPaneText();
+	function parseDeunaReceiptFromText(text, overrides = {}, options = {}) {
 		if (!isDeunaEmail(text)) return null;
-		const txnMatch = text.match(/N[uú]mero de transacci[oó]n\s*:?\s*(\d+)/i);
-		if (!txnMatch) return null;
-		const transactionNumber = txnMatch[1];
-		const amountMatch = text.match(/Monto\s*:?\s*\$?([\d,.]+)\s*(USD)?/i);
-		if (!amountMatch) return null;
+		const txnMatch = text.match(/N[uú]mero de transacci[oó]n\s*: ?\s*(\d+)/i);
+		const amountMatch = text.match(/Monto\s*: ?\s*\$?([\d,.]+)\s*(USD)?/i);
+		const reasonMatch = text.match(/Motivo\s*: ?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ ]+?)\s+Fecha/i);
+		if (!amountMatch || !reasonMatch) return null;
 		const amount = parseAmount(amountMatch[1]);
 		if (amount === null) return null;
-		const reasonMatch = text.match(/Motivo\s*:?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ ]+?)\s+Fecha/i);
-		const reason = reasonMatch ? reasonMatch[1].trim() : "Recarga";
+		const reason = reasonMatch[1].trim();
 		if (reason.toLowerCase() !== "recarga") return null;
-		const dateMatch = text.match(/Fecha\s*:?\s*(\d{1,2}\s+[a-zA-ZáéíóúñÑ]+\.?\s+\d{4}\s*-\s*\d{2}[h:]\d{2})/i);
-		const sourceMatch = text.match(/Cuenta de origen\s*:?\s*(\*+\d+)/i);
-		const destMatch = text.match(/Cuenta de destino\s*:?\s*(\*+\d+)/i);
-		const maskedIdMatch = text.match(/C[ée]dula terminada en\s*:?\s*(\*+\d+)/i);
+		const dateMatch = text.match(/Fecha\s*: ?\s*(\d{1,2}\s+[a-zA-ZáéíóúñÑ]+\.?\s+\d{4}\s*-\s*\d{2}[h:]\d{2})/i);
+		const sourceMatch = text.match(/Cuenta de origen\s*: ?\s*(\*+\d+)/i);
+		const destMatch = text.match(/Cuenta de destino\s*: ?\s*(\*+\d+)/i);
+		const maskedIdMatch = text.match(/C[ée]dula terminada en\s*: ?\s*(\*+\d+)/i);
 		let supportPhone;
 		const phoneMatch = text.match(/09[\d\s-]{8,15}/);
 		if (phoneMatch) {
@@ -160,35 +222,103 @@
 			if (digits.length === 10) supportPhone = digits;
 		}
 		let customerName;
-		const nameMatch = text.match(/Cliente\s*:?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+?)(?:\s+Ci|$)/i);
+		const nameMatch = text.match(/Cliente\s*: ?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+?)(?:\s+Ci|$)/i);
 		if (nameMatch) customerName = nameMatch[1].trim();
 		else {
 			const altMatch = text.match(/([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,})\s+C[ée]dula terminada/i);
 			if (altMatch) customerName = altMatch[1].trim();
 		}
-		let subject = "";
-		const subjectEl = document.querySelector("div[role=\"main\"] h1, div[role=\"heading\"] h1, [data-testid=\"conversations-subject\"], #selected-email .subject");
-		if (subjectEl?.textContent) subject = subjectEl.textContent.trim();
-		else {
-			subject = document.title || "";
-			if (subject.endsWith(" - Outlook")) subject = subject.slice(0, -10);
-			else if (subject.endsWith(" - Mail - Outlook")) subject = subject.slice(0, -17);
-		}
-		return {
-			sender: "notificaciones@deunaapp.com",
-			subject: subject || "Recarga Deuna",
+		const subject = overrides.subject || "Recarga Deuna";
+		const receipt = {
+			sender: overrides.sender || "notificaciones@deunaapp.com",
+			subject,
+			receivedAt: overrides.receivedAt,
 			amount,
-			currency: "USD",
-			transactionNumber,
+			currency: amountMatch[2] || "USD",
 			reason,
 			transactionDate: dateMatch ? dateMatch[1] : void 0,
 			sourceAccount: sourceMatch ? sourceMatch[1] : void 0,
 			destinationAccount: destMatch ? destMatch[1] : void 0,
+			transactionNumber: txnMatch?.[1] ?? "",
+			supportPhone,
 			customerName,
 			maskedId: maskedIdMatch ? maskedIdMatch[1] : void 0,
-			supportPhone,
 			rawJson: JSON.stringify({ extractedAt: new Date().toISOString() })
 		};
+		if (options.requireTransactionNumber !== false && !receipt.transactionNumber) return null;
+		return receipt;
+	}
+	function getOutlookMailItems() {
+		return Array.from(document.querySelectorAll("#MailList [role=\"option\"][aria-label]"));
+	}
+	function getOutlookReadingPane() {
+		return document.querySelector("#ConversationReadingPaneContainer") || document.querySelector("#ReadingPaneContainerId");
+	}
+	function extractFromPage() {
+		const { text } = getReadingPaneText();
+		let subject = "";
+		for (const selector of [
+			"#ConversationReadingPaneContainer [id$=\"_SUBJECT\"] [title]",
+			"#ConversationReadingPaneContainer [id$=\"_SUBJECT\"]",
+			"#ReadingPaneContainerId [id$=\"_SUBJECT\"] [title]",
+			"#ReadingPaneContainerId [id$=\"_SUBJECT\"]"
+		]) {
+			const subjectEl = document.querySelector(selector);
+			const candidate = subjectEl?.getAttribute("title")?.trim() || subjectEl?.textContent?.trim();
+			if (candidate) {
+				subject = candidate;
+				break;
+			}
+		}
+		if (!subject) {
+			subject = document.title || "";
+			if (subject.endsWith(" - Outlook")) subject = subject.slice(0, -10);
+			else if (subject.endsWith(" - Mail - Outlook")) subject = subject.slice(0, -17);
+		}
+		const parsed = parseDeunaReceiptFromText(text, { subject: subject || "Recarga Deuna" });
+		if (!parsed?.transactionNumber) return null;
+		return parsed;
+	}
+	function extractPreviewReceipt(option) {
+		const text = option.getAttribute("aria-label")?.replace(/\s+/g, " ").trim() || option.textContent?.replace(/\s+/g, " ").trim() || "";
+		const parts = text.split(/\s{2,}/).filter(Boolean);
+		return parseDeunaReceiptFromText(text, {
+			sender: parts[0] || void 0,
+			subject: parts[1] || void 0,
+			receivedAt: parts[2] || void 0
+		}, { requireTransactionNumber: false });
+	}
+	function renderBadge(target, show) {
+		if (!target) return;
+		const existing = target.querySelector(":scope > .deuna-sent-badge");
+		if (!show) {
+			existing?.remove();
+			return;
+		}
+		if (existing) {
+			existing.textContent = SENT_BADGE_TEXT;
+			return;
+		}
+		const badge = document.createElement("span");
+		badge.className = "deuna-sent-badge";
+		badge.textContent = SENT_BADGE_TEXT;
+		target.appendChild(badge);
+	}
+	function updateMailListBadges() {
+		for (const option of getOutlookMailItems()) {
+			const receipt = extractPreviewReceipt(option);
+			if (!receipt) {
+				renderBadge(option, false);
+				continue;
+			}
+			renderBadge(option, isFingerprintLoaded(receipt) || (receipt.transactionNumber ? getSentTxnIds().has(receipt.transactionNumber) : false));
+		}
+	}
+	function updateReadingPaneBadge() {
+		const pane = getOutlookReadingPane();
+		if (!pane) return;
+		const receipt = extractFromPage();
+		renderBadge(pane, Boolean(receipt && (isFingerprintLoaded(receipt) || getSentTxnIds().has(receipt.transactionNumber))));
 	}
 	async function processCurrentEmail() {
 		const data = extractFromPage();
@@ -250,12 +380,16 @@
 	var lastUrl = location.href;
 	function startPolling() {
 		addUI();
+		updateMailListBadges();
+		updateReadingPaneBadge();
 		setInterval(() => {
 			if (location.href !== lastUrl) {
 				lastUrl = location.href;
 				addUI();
 			}
 			if (!document.getElementById("deuna-sricache-btn")) addUI();
+			updateMailListBadges();
+			updateReadingPaneBadge();
 			const data = extractFromPage();
 			if (data) {
 				if (!getSentTxnIds().has(data.transactionNumber)) processCurrentEmail();
