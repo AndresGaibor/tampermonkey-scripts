@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.2
+// @version      1.0.3
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -54,6 +54,9 @@
 			return new Set();
 		}
 	}
+	function saveStringSet(storageKey, values) {
+		localStorage.setItem(storageKey, JSON.stringify([...values]));
+	}
 	function normalizeFingerprintValue(value) {
 		if (value === void 0 || value === null) return "";
 		return (typeof value === "number" ? value.toFixed(2) : value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -100,6 +103,11 @@
 	}
 	function getSentSignatures() {
 		return loadStringSet(SENT_SIGNATURES_KEY);
+	}
+	function markSentFingerprints(data) {
+		const sent = getSentSignatures();
+		for (const signature of buildReceiptSignatures(data)) sent.add(signature);
+		saveStringSet(SENT_SIGNATURES_KEY, sent);
 	}
 	function isFingerprintLoaded(data) {
 		const sent = getSentSignatures();
@@ -323,10 +331,14 @@
 	async function processCurrentEmail() {
 		const data = extractFromPage();
 		if (!data) return false;
-		if (getSentTxnIds().has(data.transactionNumber)) return true;
+		if (getSentTxnIds().has(data.transactionNumber)) {
+			markSentFingerprints(data);
+			return true;
+		}
 		try {
 			if ((await postReceipt(data)).success) {
 				markSent(data.transactionNumber);
+				markSentFingerprints(data);
 				console.log("[Deuna→SriCache] Sincronizada recarga:", data.transactionNumber, data.amount);
 				return true;
 			}
@@ -353,6 +365,7 @@
 				return;
 			}
 			if (getSentTxnIds().has(data.transactionNumber)) {
+				markSentFingerprints(data);
 				btn.textContent = "✓ Ya enviado";
 				setTimeout(() => {
 					btn.textContent = "Enviar recarga a SriCache";
@@ -364,6 +377,7 @@
 				const res = await postReceipt(data);
 				if (res.success) {
 					markSent(data.transactionNumber);
+					markSentFingerprints(data);
 					btn.textContent = res.duplicated ? "✓ Ya existía" : "✓ Enviado";
 				} else btn.textContent = "❌ Error";
 			} catch (err) {

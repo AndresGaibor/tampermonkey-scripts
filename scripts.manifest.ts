@@ -5,7 +5,7 @@ export const scripts = {
     userscript: {
       name: 'SRI - Comprobantes sincronizados manual',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '2026.6.12.12',
+      version: '2026.6.12.13',
       description:
         'Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.',
       author: 'Andres',
@@ -30,7 +30,7 @@ export const scripts = {
     userscript: {
       name: 'Deuna Outlook → SriCache',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '1.0.2',
+      version: '1.0.3',
       description: 'Extrae recargas Deuna desde Outlook Web y las envía a SriCache',
       author: 'SriCache',
       match: [
@@ -58,7 +58,7 @@ export const scripts = {
     userscript: {
       name: 'Demo - Current Site Helper',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.1.2',
+      version: '0.1.3',
       description: 'Script mínimo de ejemplo para crear nuevos userscripts desde este monorepo.',
       author: 'Andres',
       match: ['https://example.com/*'],

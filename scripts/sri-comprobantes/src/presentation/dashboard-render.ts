@@ -8,6 +8,10 @@ import {
   getStatusLabel,
 } from './dashboard-stats.ts';
 
+function buttonLabel(icon: string, text: string) {
+  return `<span class="tm-sri-btn-icon" aria-hidden="true">${icon}</span><span class="tm-sri-btn-label">${text}</span>`;
+}
+
 export function ensureDashboardMounted() {
   const existing = document.getElementById('tm-sri-dashboard');
 
@@ -77,7 +81,7 @@ export function createDashboardElement() {
 
         <div class="tm-sri-dashboard-header-actions">
           <span id="tm-sri-status-pill" class="tm-sri-status-pill tm-sri-status-loading">Cargando</span>
-          <button id="tm-sri-compact-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Minimizar</button>
+          <button id="tm-sri-compact-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel('▾', 'Minimizar')}</button>
         </div>
       </div>
 
@@ -121,25 +125,25 @@ export function createDashboardElement() {
       </div>
 
       <div class="tm-sri-dashboard-actions">
-        <button id="tm-sri-refresh-btn" type="button" class="tm-sri-btn tm-sri-btn-primary">Actualizar API</button>
-        <button id="tm-sri-refresh-periods-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Releer meses</button>
-        <button id="tm-sri-refresh-report-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Releer TXT</button>
+        <button id="tm-sri-refresh-btn" type="button" class="tm-sri-btn tm-sri-btn-primary">${buttonLabel('↻', 'Actualizar API')}</button>
+        <button id="tm-sri-refresh-periods-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel('🗓', 'Releer meses')}</button>
+        <button id="tm-sri-refresh-report-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel('TXT', 'Releer TXT')}</button>
 
         <div class="tm-sri-filter-group">
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="missing">Pendientes</button>
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="all">Todas</button>
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="downloaded">Descargadas</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="missing">${buttonLabel('!', 'Pendientes')}</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="all">${buttonLabel('≡', 'Todas')}</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="downloaded">${buttonLabel('✓', 'Descargadas')}</button>
         </div>
 
         <div class="tm-sri-filter-group">
-          <button id="tm-sri-smart-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-txt">TXT inteligente</button>
-          <button id="tm-sri-force-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Forzar TXT</button>
+          <button id="tm-sri-smart-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-txt">${buttonLabel('⚡', 'TXT inteligente')}</button>
+          <button id="tm-sri-force-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel('⏱', 'Forzar TXT')}</button>
         </div>
 
         <div class="tm-sri-filter-group">
-          <button id="tm-sri-download-page-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">Descargar página</button>
-          <button id="tm-sri-download-all-pages-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">Descargar todas páginas</button>
-          <button id="tm-sri-stop-download-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Detener</button>
+          <button id="tm-sri-download-page-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">${buttonLabel('↓', 'Descargar página')}</button>
+          <button id="tm-sri-download-all-pages-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">${buttonLabel('⇣', 'Descargar todas páginas')}</button>
+          <button id="tm-sri-stop-download-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel('■', 'Detener')}</button>
         </div>
       </div>
     </div>

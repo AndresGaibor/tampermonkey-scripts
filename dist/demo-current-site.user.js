@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Demo - Current Site Helper
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.2
+// @version      0.1.3
 // @author       Andres
 // @description  Script mínimo de ejemplo para crear nuevos userscripts desde este monorepo.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -61,6 +61,9 @@
       right: 18px;
       bottom: 18px;
       z-index: 999999;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       padding: 10px 12px;
       border-radius: 10px;
       background: #111827;
@@ -72,7 +75,7 @@
   `, "ag-userscript-demo-style");
 		const box = document.createElement("div");
 		box.id = "ag-userscript-demo";
-		box.textContent = `Userscript activo: ${normalizeText(document.title) || location.hostname}`;
+		box.innerHTML = `<span aria-hidden="true">⚙️</span><span>Userscript activo: ${normalizeText(document.title) || location.hostname}</span>`;
 		document.body.appendChild(box);
 	}
 	main();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SRI - Comprobantes sincronizados manual
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      2026.6.12.12
+// @version      2026.6.12.13
 // @author       Andres
 // @description  Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
@@ -417,6 +417,22 @@
       padding: 7px 10px;
       font-size: 12px;
       font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tm-sri-btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1em;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .tm-sri-btn-label {
+      line-height: 1;
     }
 
     .tm-sri-btn:hover:not(:disabled) {
@@ -621,7 +637,10 @@
 	}
 	function updateCompactButton() {
 		const button = document.getElementById("tm-sri-compact-btn");
-		if (button) button.textContent = state.compactMode ? "Expandir" : "Minimizar";
+		if (button) {
+			const label = button.querySelector(".tm-sri-btn-label");
+			if (label) label.textContent = state.compactMode ? "Expandir" : "Minimizar";
+		}
 	}
 	function updateBatchButtons() {
 		const downloadPageButton = document.getElementById("tm-sri-download-page-btn");
@@ -629,11 +648,13 @@
 		const stopButton = document.getElementById("tm-sri-stop-download-btn");
 		if (downloadPageButton) {
 			downloadPageButton.disabled = state.isBatchDownloading;
-			downloadPageButton.textContent = state.isBatchDownloading ? "Descargando..." : "Descargar página";
+			const label = downloadPageButton.querySelector(".tm-sri-btn-label");
+			if (label) label.textContent = state.isBatchDownloading ? "Descargando..." : "Descargar página";
 		}
 		if (downloadAllButton) {
 			downloadAllButton.disabled = state.isBatchDownloading;
-			downloadAllButton.textContent = state.isBatchDownloading ? "Descargando..." : "Descargar todas páginas";
+			const label = downloadAllButton.querySelector(".tm-sri-btn-label");
+			if (label) label.textContent = state.isBatchDownloading ? "Descargando..." : "Descargar todas páginas";
 		}
 		if (stopButton) stopButton.disabled = !state.isBatchDownloading;
 	}
@@ -642,7 +663,8 @@
 		const forceButton = document.getElementById("tm-sri-force-txt-btn");
 		if (smartButton) {
 			smartButton.disabled = state.isDownloadingTxtReport;
-			smartButton.textContent = state.isDownloadingTxtReport ? "TXT descargando..." : "TXT inteligente";
+			const label = smartButton.querySelector(".tm-sri-btn-label");
+			if (label) label.textContent = state.isDownloadingTxtReport ? "TXT descargando..." : "TXT inteligente";
 		}
 		if (forceButton) forceButton.disabled = state.isDownloadingTxtReport;
 	}
@@ -653,6 +675,9 @@
 			warning: "Atención",
 			error: "Error"
 		}[status] || status;
+	}
+	function buttonLabel(icon, text) {
+		return `<span class="tm-sri-btn-icon" aria-hidden="true">${icon}</span><span class="tm-sri-btn-label">${text}</span>`;
 	}
 	function ensureDashboardMounted() {
 		const existing = document.getElementById("tm-sri-dashboard");
@@ -711,7 +736,7 @@
 
         <div class="tm-sri-dashboard-header-actions">
           <span id="tm-sri-status-pill" class="tm-sri-status-pill tm-sri-status-loading">Cargando</span>
-          <button id="tm-sri-compact-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Minimizar</button>
+          <button id="tm-sri-compact-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel("▾", "Minimizar")}</button>
         </div>
       </div>
 
@@ -755,25 +780,25 @@
       </div>
 
       <div class="tm-sri-dashboard-actions">
-        <button id="tm-sri-refresh-btn" type="button" class="tm-sri-btn tm-sri-btn-primary">Actualizar API</button>
-        <button id="tm-sri-refresh-periods-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Releer meses</button>
-        <button id="tm-sri-refresh-report-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Releer TXT</button>
+        <button id="tm-sri-refresh-btn" type="button" class="tm-sri-btn tm-sri-btn-primary">${buttonLabel("↻", "Actualizar API")}</button>
+        <button id="tm-sri-refresh-periods-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel("🗓", "Releer meses")}</button>
+        <button id="tm-sri-refresh-report-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel("TXT", "Releer TXT")}</button>
 
         <div class="tm-sri-filter-group">
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="missing">Pendientes</button>
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="all">Todas</button>
-          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="downloaded">Descargadas</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="missing">${buttonLabel("!", "Pendientes")}</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="all">${buttonLabel("≡", "Todas")}</button>
+          <button type="button" class="tm-sri-btn tm-sri-filter-btn" data-filter="downloaded">${buttonLabel("✓", "Descargadas")}</button>
         </div>
 
         <div class="tm-sri-filter-group">
-          <button id="tm-sri-smart-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-txt">TXT inteligente</button>
-          <button id="tm-sri-force-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Forzar TXT</button>
+          <button id="tm-sri-smart-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-txt">${buttonLabel("⚡", "TXT inteligente")}</button>
+          <button id="tm-sri-force-txt-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel("⏱", "Forzar TXT")}</button>
         </div>
 
         <div class="tm-sri-filter-group">
-          <button id="tm-sri-download-page-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">Descargar página</button>
-          <button id="tm-sri-download-all-pages-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">Descargar todas páginas</button>
-          <button id="tm-sri-stop-download-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">Detener</button>
+          <button id="tm-sri-download-page-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">${buttonLabel("↓", "Descargar página")}</button>
+          <button id="tm-sri-download-all-pages-btn" type="button" class="tm-sri-btn tm-sri-btn-danger">${buttonLabel("⇣", "Descargar todas páginas")}</button>
+          <button id="tm-sri-stop-download-btn" type="button" class="tm-sri-btn tm-sri-btn-secondary">${buttonLabel("■", "Detener")}</button>
         </div>
       </div>
     </div>

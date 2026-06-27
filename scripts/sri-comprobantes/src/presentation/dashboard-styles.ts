@@ -130,6 +130,22 @@ export function injectStyles() {
       padding: 7px 10px;
       font-size: 12px;
       font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tm-sri-btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1em;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .tm-sri-btn-label {
+      line-height: 1;
     }
 
     .tm-sri-btn:hover:not(:disabled) {

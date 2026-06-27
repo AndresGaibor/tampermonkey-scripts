@@ -387,6 +387,7 @@ async function processCurrentEmail(): Promise<boolean> {
 
   const sent = getSentTxnIds();
   if (sent.has(data.transactionNumber)) {
+    markSentFingerprints(data);
     return true; // Already processed
   }
 
@@ -394,6 +395,7 @@ async function processCurrentEmail(): Promise<boolean> {
     const res = await postReceipt(data);
     if (res.success) {
       markSent(data.transactionNumber);
+      markSentFingerprints(data);
       console.log('[Deuna→SriCache] Sincronizada recarga:', data.transactionNumber, data.amount);
       return true;
     }
@@ -427,6 +429,7 @@ function addUI(): void {
 
     const sent = getSentTxnIds();
     if (sent.has(data.transactionNumber)) {
+      markSentFingerprints(data);
       btn.textContent = '✓ Ya enviado';
       setTimeout(() => {
         btn.textContent = 'Enviar recarga a SriCache';
@@ -439,6 +442,7 @@ function addUI(): void {
       const res = await postReceipt(data);
       if (res.success) {
         markSent(data.transactionNumber);
+        markSentFingerprints(data);
         btn.textContent = res.duplicated ? '✓ Ya existía' : '✓ Enviado';
       } else {
         btn.textContent = '❌ Error';

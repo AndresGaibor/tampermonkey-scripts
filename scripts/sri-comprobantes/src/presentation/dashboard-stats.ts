@@ -99,7 +99,8 @@ export function updateCompactButton() {
   const button = document.getElementById('tm-sri-compact-btn');
 
   if (button) {
-    button.textContent = state.compactMode ? 'Expandir' : 'Minimizar';
+    const label = button.querySelector('.tm-sri-btn-label');
+    if (label) label.textContent = state.compactMode ? 'Expandir' : 'Minimizar';
   }
 }
 
@@ -110,12 +111,14 @@ export function updateBatchButtons() {
 
   if (downloadPageButton) {
     downloadPageButton.disabled = state.isBatchDownloading;
-    downloadPageButton.textContent = state.isBatchDownloading ? 'Descargando...' : 'Descargar página';
+    const label = downloadPageButton.querySelector('.tm-sri-btn-label');
+    if (label) label.textContent = state.isBatchDownloading ? 'Descargando...' : 'Descargar página';
   }
 
   if (downloadAllButton) {
     downloadAllButton.disabled = state.isBatchDownloading;
-    downloadAllButton.textContent = state.isBatchDownloading ? 'Descargando...' : 'Descargar todas páginas';
+    const label = downloadAllButton.querySelector('.tm-sri-btn-label');
+    if (label) label.textContent = state.isBatchDownloading ? 'Descargando...' : 'Descargar todas páginas';
   }
 
   if (stopButton) {
@@ -129,7 +132,8 @@ export function updateTxtButtons() {
 
   if (smartButton) {
     smartButton.disabled = state.isDownloadingTxtReport;
-    smartButton.textContent = state.isDownloadingTxtReport ? 'TXT descargando...' : 'TXT inteligente';
+    const label = smartButton.querySelector('.tm-sri-btn-label');
+    if (label) label.textContent = state.isDownloadingTxtReport ? 'TXT descargando...' : 'TXT inteligente';
   }
 
   if (forceButton) {
