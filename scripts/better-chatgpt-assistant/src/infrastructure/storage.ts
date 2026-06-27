@@ -1,7 +1,13 @@
-import { clamp } from '../../../../shared/math.ts';
+import { clamp } from '@shared/math.ts';
+import {
+  KEY_ENABLED,
+  KEY_MODE,
+  KEY_PINNED,
+  KEY_POS,
+} from '../shared/constants.ts';
+import type { PinnedPosition } from '../shared/state.ts';
 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-export type PinnedPosition = { x: number; y: number; side: 'left' | 'right'; hidden: boolean };
 
 export function loadBool(storage: StorageLike, key: string, def: boolean): boolean {
   const v = storage.getItem(key);
@@ -14,17 +20,17 @@ export function saveBool(storage: StorageLike, key: string, val: boolean): void 
 }
 
 export function loadMode(storage: StorageLike): 'performance' | 'balanced' | 'conservative' {
-  const v = storage.getItem('cgpt_vs_mode');
+  const v = storage.getItem(KEY_MODE);
   return (v === 'performance' || v === 'balanced' || v === 'conservative') ? v : 'balanced';
 }
 
 export function saveMode(storage: StorageLike, mode: 'performance' | 'balanced' | 'conservative'): void {
-  storage.setItem('cgpt_vs_mode', mode);
+  storage.setItem(KEY_MODE, mode);
 }
 
 export function loadPos(storage: StorageLike, viewportWidth: number, viewportHeight: number): PinnedPosition {
   try {
-    const raw = storage.getItem('cgpt_vs_pos');
+    const raw = storage.getItem(KEY_POS);
     if (!raw) return { x: 18, y: 64, side: 'left', hidden: false };
     const p = JSON.parse(raw) as Partial<PinnedPosition>;
     if (typeof p.x === 'number' && typeof p.y === 'number') {
@@ -40,5 +46,5 @@ export function loadPos(storage: StorageLike, viewportWidth: number, viewportHei
 }
 
 export function savePos(storage: StorageLike, pos: PinnedPosition): void {
-  storage.setItem('cgpt_vs_pos', JSON.stringify(pos));
+  storage.setItem(KEY_POS, JSON.stringify(pos));
 }

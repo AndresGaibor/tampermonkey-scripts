@@ -4,7 +4,7 @@ import {
   extractAccessKeyFromText,
   extractDocumentNumberFromTypeText,
   shouldTreatAsDownloaded,
-} from '../scripts/sri-comprobantes/src/domain/row-matching.ts';
+} from '../scripts/sri-comprobantes/src/domain/comprobante/row-matching.ts';
 
 describe('SRI row matching', () => {
   test('buildTableIndexes usa encabezados conocidos y fallback seguro', () => {

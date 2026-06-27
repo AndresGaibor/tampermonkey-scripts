@@ -1,4 +1,4 @@
-import { onlyDigits } from '../../../../shared/text.ts';
+import { onlyDigits } from '@shared/text.ts';
 
 export type InvoiceLike = {
   access_key?: string | null;

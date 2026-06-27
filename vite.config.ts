@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vite';
 import monkey from 'vite-plugin-monkey';
 import { getScript, getScriptNames } from './scripts.manifest.ts';
@@ -20,6 +21,12 @@ const supportBase =
   'https://github.com/AndresGaibor/tampermonkey-scripts/issues';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@sri': path.resolve(__dirname, 'scripts/sri-comprobantes/src'),
+      '@shared': path.resolve(__dirname, 'shared'),
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: Number(process.env.PORT || 5173),

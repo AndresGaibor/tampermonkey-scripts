@@ -1,4 +1,4 @@
-import { normalizeSpaces, normalizeText } from '../../../../shared/text.ts';
+import { normalizeSpaces, normalizeText } from '@shared/text.ts';
 
 export type RowInvoiceLike = {
   downloaded?: boolean;

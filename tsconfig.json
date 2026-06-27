@@ -19,7 +19,13 @@
       "vite-plugin-monkey/client"
     ],
     "allowJs": false,
-    "checkJs": false
+    "checkJs": false,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@sri/*": ["./scripts/sri-comprobantes/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
   },
   "include": [
     "shared/**/*.ts",

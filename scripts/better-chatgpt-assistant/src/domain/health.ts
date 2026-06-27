@@ -1,9 +1,5 @@
-export type Language = 'zh' | 'en';
-
-const MEM_STABLE_MB = 220;
-const MEM_WARNING_MB = 520;
-const DOM_OK = 7000;
-const DOM_WARN = 15000;
+import type { Language } from '../shared/state.ts';
+import { MEM_STABLE_MB, MEM_WARNING_MB, DOM_OK, DOM_WARN } from '../shared/constants.ts';
 
 export function memoryLevel(usedMB: number | null, lang: Language) {
   if (usedMB == null) return { label: lang === 'zh' ? 'No disponible' : 'N/A', level: 'na' as const };
@@ -59,13 +55,13 @@ export function suggestionText(input: {
 
   if (mem === 'bad' || dom === 'bad') {
     return input.lang === 'zh'
-      ? 'Consejo: la página entró en zona de lentitud. Pulsa “Optimizar ahora” para reducir la carga; exporta o respalda el contenido importante antes de refrescar o abrir una nueva conversación.'
-      : 'Tip: Near lag zone. Click “Optimize Now” to reduce load. Export/backup important content before refreshing or starting a new chat.';
+      ? 'Consejo: la página entró en zona de lentitud. Pulsa "Optimizar ahora" para reducir la carga; exporta o respalda el contenido importante antes de refrescar o abrir una nueva conversación.'
+      : 'Tip: Near lag zone. Click "Optimize Now" to reduce load. Export/backup important content before refreshing or starting a new chat.';
   }
   if (mem === 'warn' || dom === 'warn') {
     return input.lang === 'zh'
-      ? 'Consejo: la carga está alta, pero puedes seguir conversando. Evita desplazarte mucho por el historial de una sola vez; para revisar contenido antiguo puedes cambiar temporalmente a “Conservador”.'
-      : 'Tip: Load is higher but still OK. Avoid long scroll sessions. Switch to “Conservative” when browsing old history.';
+      ? 'Consejo: la carga está alta, pero puedes seguir conversando. Evita desplazarte mucho por el historial de una sola vez; para revisar contenido antiguo puedes cambiar temporalmente a "Conservador".'
+      : 'Tip: Load is higher but still OK. Avoid long scroll sessions. Switch to "Conservative" when browsing old history.';
   }
   if (input.virtCount > 0 && input.turns > 220) {
     return input.lang === 'zh'

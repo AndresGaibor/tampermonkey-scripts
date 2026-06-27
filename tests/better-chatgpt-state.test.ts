@@ -5,7 +5,7 @@ import {
   memoryLevel,
   modeLabel,
   suggestionText,
-} from '../scripts/better-chatgpt-assistant/src/lib/health.ts';
+} from '../scripts/better-chatgpt-assistant/src/domain/health.ts';
 import {
   loadBool,
   loadMode,
@@ -13,7 +13,7 @@ import {
   saveBool,
   saveMode,
   savePos,
-} from '../scripts/better-chatgpt-assistant/src/lib/storage.ts';
+} from '../scripts/better-chatgpt-assistant/src/infrastructure/storage.ts';
 
 describe('Better ChatGPT state helpers', () => {
   test('storage helpers round-trip values', () => {

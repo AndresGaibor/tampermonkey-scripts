@@ -3,7 +3,7 @@ import {
   buildDocumentNumber,
   buildInvoiceIndexes,
   getDocumentNumberFromAccessKey,
-} from '../scripts/sri-comprobantes/src/domain/invoice-keys.ts';
+} from '../scripts/sri-comprobantes/src/domain/comprobante/invoice-keys.ts';
 
 describe('SRI invoice keys', () => {
   test('buildDocumentNumber concatena serie y secuencial', () => {

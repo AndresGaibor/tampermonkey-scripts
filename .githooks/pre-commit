@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+echo "=== pre-commit: typecheck ==="
+bun run typecheck
+
+echo "=== pre-commit: tests ==="
+bun test
+
+echo "=== pre-commit: build:sri ==="
+bun run build:sri
+
+echo "=== pre-commit: build:better-chatgpt-assistant ==="
+bun run build:better-chatgpt-assistant
+
+echo "=== pre-commit: OK ==="
