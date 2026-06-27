@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.8
+// @version      1.0.10
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -151,6 +151,74 @@
 		sent.add(txnNumber);
 		localStorage.setItem(SENT_KEY, JSON.stringify([...sent]));
 	}
+	function toReceiptParts(receipt) {
+		const amount = typeof receipt.amount === "string" ? Number(receipt.amount) : receipt.amount;
+		if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
+		return {
+			sender: receipt.sender || "notificaciones@deunaapp.com",
+			subject: receipt.subject || "Recarga Deuna",
+			receivedAt: receipt.receivedAt || receipt.received_at || void 0,
+			customerName: receipt.customerName || receipt.customer_name || void 0,
+			maskedId: receipt.maskedId || receipt.masked_id || void 0,
+			amount,
+			currency: receipt.currency || "USD",
+			reason: receipt.reason || "Recarga",
+			transactionDate: receipt.transactionDate || receipt.transaction_date || void 0,
+			sourceAccount: receipt.sourceAccount || receipt.source_account || void 0,
+			destinationAccount: receipt.destinationAccount || receipt.destination_account || void 0,
+			transactionNumber: receipt.transactionNumber || receipt.transaction_number || void 0,
+			supportPhone: receipt.supportPhone || receipt.support_phone || void 0
+		};
+	}
+	function parseStoredReceipts(payload) {
+		if (!payload || typeof payload !== "object") return [];
+		const data = "data" in payload ? payload.data : payload;
+		if (Array.isArray(data)) return data;
+		if (data && typeof data === "object" && Array.isArray(data.items)) return data.items;
+		return [];
+	}
+	async function getStoredReceipts() {
+		const url = `${getApiBase()}/emails?pageSize=2000`;
+		const fn = typeof GM_xmlhttpRequest !== "undefined" ? GM_xmlhttpRequest : null;
+		if (fn) return parseStoredReceipts(await new Promise((resolve, reject) => {
+			fn({
+				method: "GET",
+				url,
+				onload: (res) => {
+					if (res.status >= 200 && res.status < 300) try {
+						resolve(JSON.parse(res.responseText));
+					} catch (error) {
+						reject(error);
+					}
+					else reject(new Error(`HTTP ${res.status}: ${res.responseText}`));
+				},
+				onerror: (err) => reject(err),
+				ontimeout: () => reject(new Error("Timeout de red")),
+				timeout: 1e4
+			});
+		}));
+		const response = await fetch(url);
+		if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+		return parseStoredReceipts(await response.json());
+	}
+	var sentReceiptsHydrated = false;
+	async function hydrateSentReceipts() {
+		if (sentReceiptsHydrated) return;
+		sentReceiptsHydrated = true;
+		try {
+			const receipts = await getStoredReceipts();
+			for (const receipt of receipts) {
+				const parts = toReceiptParts(receipt);
+				if (!parts) continue;
+				markSentFingerprints(parts);
+				if (parts.transactionNumber) markSent(parts.transactionNumber);
+			}
+			updateMailListBadges();
+			updateReadingPaneBadge();
+		} catch (error) {
+			console.warn("[Deuna→SriCache] No se pudo cargar el historial de recargas:", error);
+		}
+	}
 	async function postReceipt(data) {
 		const url = `${getApiBase()}/emails`;
 		return new Promise((resolve, reject) => {
@@ -213,7 +281,7 @@
 		try {
 			const clean = amountStr.replace(/[^0-9,.]/g, "").replace(/\./g, "").replace(",", ".");
 			const parsed = parseFloat(clean);
-			return isNaN(parsed) ? null : parsed;
+			return Number.isNaN(parsed) ? null : parsed;
 		} catch {
 			return null;
 		}
@@ -425,6 +493,7 @@
 	var lastUrl = location.href;
 	function startPolling() {
 		addUI();
+		hydrateSentReceipts();
 		updateMailListBadges();
 		updateReadingPaneBadge();
 		setInterval(() => {

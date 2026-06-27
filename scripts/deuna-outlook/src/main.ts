@@ -24,6 +24,30 @@ interface DeunaEmailReceipt {
   rawJson?: string;
 }
 
+interface DeunaStoredEmailReceipt {
+  sender?: string;
+  subject?: string;
+  received_at?: string | null;
+  receivedAt?: string | null;
+  customer_name?: string | null;
+  customerName?: string | null;
+  masked_id?: string | null;
+  maskedId?: string | null;
+  amount?: number | string;
+  currency?: string | null;
+  reason?: string | null;
+  transaction_date?: string | null;
+  transactionDate?: string | null;
+  source_account?: string | null;
+  sourceAccount?: string | null;
+  destination_account?: string | null;
+  destinationAccount?: string | null;
+  transaction_number?: string | null;
+  transactionNumber?: string | null;
+  support_phone?: string | null;
+  supportPhone?: string | null;
+}
+
 type ReceiptParts = Partial<Pick<
   DeunaEmailReceipt,
   'sender' | 'subject' | 'receivedAt' | 'customerName' | 'maskedId' | 'amount' | 'currency' | 'reason' | 'transactionDate' | 'sourceAccount' | 'destinationAccount' | 'supportPhone'
@@ -139,6 +163,94 @@ function markSent(txnNumber: string): void {
   localStorage.setItem(SENT_KEY, JSON.stringify([...sent]));
 }
 
+function toReceiptParts(receipt: DeunaStoredEmailReceipt): (ReceiptParts & { transactionNumber?: string }) | null {
+  const amount = typeof receipt.amount === 'string' ? Number(receipt.amount) : receipt.amount;
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return null;
+
+  return {
+    sender: receipt.sender || 'notificaciones@deunaapp.com',
+    subject: receipt.subject || 'Recarga Deuna',
+    receivedAt: receipt.receivedAt || receipt.received_at || undefined,
+    customerName: receipt.customerName || receipt.customer_name || undefined,
+    maskedId: receipt.maskedId || receipt.masked_id || undefined,
+    amount,
+    currency: receipt.currency || 'USD',
+    reason: receipt.reason || 'Recarga',
+    transactionDate: receipt.transactionDate || receipt.transaction_date || undefined,
+    sourceAccount: receipt.sourceAccount || receipt.source_account || undefined,
+    destinationAccount: receipt.destinationAccount || receipt.destination_account || undefined,
+    transactionNumber: receipt.transactionNumber || receipt.transaction_number || undefined,
+    supportPhone: receipt.supportPhone || receipt.support_phone || undefined,
+  };
+}
+
+function parseStoredReceipts(payload: unknown): DeunaStoredEmailReceipt[] {
+  if (!payload || typeof payload !== 'object') return [];
+
+  const data = 'data' in payload ? (payload as { data?: unknown }).data : payload;
+  if (Array.isArray(data)) return data as DeunaStoredEmailReceipt[];
+  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+    return (data as { items: DeunaStoredEmailReceipt[] }).items;
+  }
+
+  return [];
+}
+
+async function getStoredReceipts(): Promise<DeunaStoredEmailReceipt[]> {
+  const url = `${getApiBase()}/emails?pageSize=2000`;
+  const fn = typeof GM_xmlhttpRequest !== 'undefined' ? GM_xmlhttpRequest : null;
+
+  if (fn) {
+    const payload = await new Promise<unknown>((resolve, reject) => {
+      fn({
+        method: 'GET',
+        url,
+        onload: (res) => {
+          if (res.status >= 200 && res.status < 300) {
+            try {
+              resolve(JSON.parse(res.responseText));
+            } catch (error) {
+              reject(error);
+            }
+          } else {
+            reject(new Error(`HTTP ${res.status}: ${res.responseText}`));
+          }
+        },
+        onerror: (err) => reject(err),
+        ontimeout: () => reject(new Error('Timeout de red')),
+        timeout: 10000,
+      });
+    });
+    return parseStoredReceipts(payload);
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  return parseStoredReceipts(await response.json());
+}
+
+let sentReceiptsHydrated = false;
+
+async function hydrateSentReceipts(): Promise<void> {
+  if (sentReceiptsHydrated) return;
+  sentReceiptsHydrated = true;
+
+  try {
+    const receipts = await getStoredReceipts();
+    for (const receipt of receipts) {
+      const parts = toReceiptParts(receipt);
+      if (!parts) continue;
+
+      markSentFingerprints(parts);
+      if (parts.transactionNumber) markSent(parts.transactionNumber);
+    }
+    updateMailListBadges();
+    updateReadingPaneBadge();
+  } catch (error) {
+    console.warn('[Deuna→SriCache] No se pudo cargar el historial de recargas:', error);
+  }
+}
+
 async function postReceipt(data: DeunaEmailReceipt): Promise<{ success: boolean; duplicated?: boolean }> {
   const apiBase = getApiBase();
   const url = `${apiBase}/emails`;
@@ -215,7 +327,7 @@ function parseAmount(amountStr: string): number | null {
   try {
     const clean = amountStr.replace(/[^0-9,.]/g, '').replace(/\./g, '').replace(',', '.');
     const parsed = parseFloat(clean);
-    return isNaN(parsed) ? null : parsed;
+    return Number.isNaN(parsed) ? null : parsed;
   } catch {
     return null;
   }
@@ -505,6 +617,7 @@ let lastUrl = location.href;
 
 function startPolling(): void {
   addUI();
+  void hydrateSentReceipts();
   updateMailListBadges();
   updateReadingPaneBadge();
 

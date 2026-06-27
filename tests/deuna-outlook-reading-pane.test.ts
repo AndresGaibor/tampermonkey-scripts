@@ -15,8 +15,6 @@ class FakeElement {
     this.attributes.set('class', value);
   }
 
-  constructor(private tagName = 'div') {}
-
   setAttribute(name: string, value: string) {
     this.attributes.set(name, value);
   }
@@ -91,10 +89,13 @@ describe('deuna-outlook reading pane', () => {
     const originalLocation = globalThis.location;
     const originalSetInterval = globalThis.setInterval;
     const originalLocalStorage = globalThis.localStorage;
+    const originalFetch = globalThis.fetch;
+    const originalGm = globalThis.GM_xmlhttpRequest;
 
     globalThis.document = documentMock;
     globalThis.location = { href: 'https://outlook.office.com/mail/' } as Location;
     globalThis.setInterval = (() => 0) as typeof setInterval;
+    globalThis.GM_xmlhttpRequest = undefined;
     globalThis.localStorage = {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -111,9 +112,12 @@ describe('deuna-outlook reading pane', () => {
         return store.size;
       },
     } as Storage;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 })) as typeof fetch;
 
     try {
       await import('../scripts/deuna-outlook/src/main.ts?reading-pane');
+      await Promise.resolve();
+      await Promise.resolve();
 
       const badge = pane.querySelector(':scope > .deuna-sent-badge');
       expect(badge).not.toBeNull();
@@ -123,6 +127,8 @@ describe('deuna-outlook reading pane', () => {
       globalThis.location = originalLocation;
       globalThis.setInterval = originalSetInterval;
       globalThis.localStorage = originalLocalStorage;
+      globalThis.fetch = originalFetch;
+      globalThis.GM_xmlhttpRequest = originalGm;
     }
   });
 
@@ -204,6 +210,10 @@ describe('deuna-outlook reading pane', () => {
     globalThis.GM_xmlhttpRequest = undefined;
     globalThis.GM_getValue = ((key: string, fallback: string) => store.get(key) ?? fallback) as typeof GM_getValue;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(JSON.stringify({ success: true, data: { items: [] } }), { status: 200 });
+      }
+
       postedUrls.push(String(url));
       postedPayloads.push(String(init?.body ?? ''));
       return new Response(JSON.stringify({ success: true }), { status: 201 });
@@ -212,6 +222,8 @@ describe('deuna-outlook reading pane', () => {
     try {
       await import('../scripts/deuna-outlook/src/main.ts?deuna-no-colons');
       await button.click();
+      await Promise.resolve();
+      await Promise.resolve();
 
       expect(postedPayloads).toHaveLength(1);
       expect(postedUrls[0]).toBe('http://localhost:3000/api/deuna-imports/emails');
