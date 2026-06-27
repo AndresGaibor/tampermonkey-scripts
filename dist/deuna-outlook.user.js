@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deuna Outlook → SriCache
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.3
+// @version      1.0.4
 // @author       SriCache
 // @description  Extrae recargas Deuna desde Outlook Web y las envía a SriCache
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=outlook.live.com
@@ -289,11 +289,15 @@
 	}
 	function extractPreviewReceipt(option) {
 		const text = option.getAttribute("aria-label")?.replace(/\s+/g, " ").trim() || option.textContent?.replace(/\s+/g, " ").trim() || "";
-		const parts = text.split(/\s{2,}/).filter(Boolean);
+		const sender = text.includes("notificaciones@deunaapp.com") ? "notificaciones@deunaapp.com" : void 0;
+		const subjectMatch = text.match(/¡Listo! Recargaste \$[\d.,]+ en tu cuenta Deuna ✅/i);
+		const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+[^A-Z]*?/i);
+		const subject = subjectMatch?.[0];
+		const receivedAt = dateMatch?.[0];
 		return parseDeunaReceiptFromText(text, {
-			sender: parts[0] || void 0,
-			subject: parts[1] || void 0,
-			receivedAt: parts[2] || void 0
+			sender,
+			subject,
+			receivedAt
 		}, { requireTransactionNumber: false });
 	}
 	function renderBadge(target, show) {

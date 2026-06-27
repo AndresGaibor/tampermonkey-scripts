@@ -328,10 +328,12 @@ function extractFromPage(): DeunaEmailReceipt | null {
 
 function extractPreviewReceipt(option: Element): DeunaEmailReceipt | null {
   const text = option.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim() || option.textContent?.replace(/\s+/g, ' ').trim() || '';
-  const parts = text.split(/\s{2,}/).filter(Boolean);
-  const sender = parts[0] || undefined;
-  const subject = parts[1] || undefined;
-  const receivedAt = parts[2] || undefined;
+
+  const sender = text.includes('notificaciones@deunaapp.com') ? 'notificaciones@deunaapp.com' : undefined;
+  const subjectMatch = text.match(/¡Listo! Recargaste \$[\d.,]+ en tu cuenta Deuna ✅/i);
+  const dateMatch = text.match(/\b(Lun|Mar|Mi[eé]|Jue|Vie|S[aá]b|Dom)\b\s+[^A-Z]*?/i);
+  const subject = subjectMatch?.[0];
+  const receivedAt = dateMatch?.[0];
 
   return parseDeunaReceiptFromText(text, {
     sender,
