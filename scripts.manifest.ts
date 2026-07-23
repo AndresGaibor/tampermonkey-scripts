@@ -73,7 +73,7 @@ export const scripts = {
     userscript: {
       name: 'DeepSeek - Session Relay + Stream Catcher',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.2.1',
+      version: '0.2.2',
       description: 'Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi. También intercepta el stream SSE para streaming en consola.',
       author: 'Andres',
       match: ['https://chat.deepseek.com/*'],

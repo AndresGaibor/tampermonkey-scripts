@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepSeek - Session Relay + Stream Catcher
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.2.1
+// @version      0.2.2
 // @author       Andres
 // @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi. También intercepta el stream SSE para streaming en consola.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -273,7 +273,15 @@
 		const original = unsafeWindow.fetch;
 		unsafeWindow.fetch.__capiStreamPatched = true;
 		unsafeWindow.fetch = async function(input, init) {
-			if (!(typeof input === "string" ? input : input instanceof Request ? input.url : String(input)).includes("chat/completion")) return original.apply(this, arguments);
+			const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+			window.__capiAllFetchCalls = window.__capiAllFetchCalls || [];
+			window.__capiAllFetchCalls.push({
+				url,
+				time: Date.now()
+			});
+			if (!url.includes("chat/completion")) return original.apply(this, arguments);
+			console.log("[DeepSeek Stream] Intercepted chat/completion fetch!");
+			window.__capiStreamIntercepted = true;
 			try {
 				const response = await original.apply(this, arguments);
 				if (!response.ok || !response.body) return response;

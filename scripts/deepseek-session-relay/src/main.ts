@@ -277,9 +277,15 @@ function interceptarFetchStream(): void {
   unsafeWindow.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
 
+    (window as any).__capiAllFetchCalls = (window as any).__capiAllFetchCalls || [];
+    (window as any).__capiAllFetchCalls.push({ url, time: Date.now() });
+
     if (!url.includes('chat/completion')) {
       return original.apply(this, arguments as any) as Promise<Response>;
     }
+
+    console.log('[DeepSeek Stream] Intercepted chat/completion fetch!');
+    (window as any).__capiStreamIntercepted = true;
 
     try {
       const response = await original.apply(this, arguments as any);
