@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepSeek - Session Relay
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.2
+// @version      0.1.3
 // @author       Andres
 // @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -11,7 +11,6 @@
 // @connect      127.0.0.1:3847
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
-// @grant        GM_setClipboard
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow

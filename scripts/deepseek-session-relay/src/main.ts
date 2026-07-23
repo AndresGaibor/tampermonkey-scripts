@@ -4,10 +4,6 @@ import { getStoredValue, setStoredValue } from '../../../shared/storage.ts';
 import { injectCss } from '../../../shared/style.ts';
 
 const BRIDGE_URL = 'http://127.0.0.1:3847/api/deepseek/session';
-const STORAGE_KEY_AUTH = 'deepseek:authorization';
-const STORAGE_KEY_THUMBCACHE = 'deepseek:thumbcache';
-const STORAGE_KEY_AWS_WAF = 'deepseek:awsWafToken';
-const STORAGE_KEY_LAST_SENT = 'deepseek:lastSent';
 const STORAGE_KEY_ENABLED = 'deepseek:enabled';
 const STORAGE_KEY_MANUAL_DS_SESSION = 'deepseek:manualDsSessionId';
 
@@ -16,8 +12,10 @@ let thumbcache: string | null = null;
 let awsWafToken: string | null = null;
 let panel: HTMLElement | null = null;
 let statusEl: HTMLElement | null = null;
-let sendBtn: HTMLButtonElement | null = null;
-let copyBtn: HTMLButtonElement | null = null;
+let sentBadge: HTMLElement | null = null;
+let retryCount = 0;
+const MAX_RETRIES = 120;
+const RETRY_INTERVAL_MS = 3000;
 
 function hideToken(valor: string | null): string {
   if (!valor || valor.length < 20) return 'no disponible';
@@ -32,14 +30,165 @@ function normalizeAuthorization(valor: string | null): string | null {
   return `Bearer ${limpio}`;
 }
 
-function guardarToken(valor: string, origen: string): void {
+function tieneCredenciales(): boolean {
+  return !!(authorization && thumbcache && awsWafToken);
+}
+
+function construirBundle(): object {
+  return {
+    source: 'deepseek',
+    capturedAt: new Date().toISOString(),
+    authorization,
+    cookies: {
+      thumbcache,
+      awsWafToken,
+      dsSessionId: getStoredValue<string | null>(STORAGE_KEY_MANUAL_DS_SESSION, null),
+    },
+  };
+}
+
+function enviarAlBridge(): void {
+  if (!tieneCredenciales()) return;
+
+  const bundle = construirBundle();
+  const json = JSON.stringify(bundle);
+
+  GM_xmlhttpRequest({
+    method: 'POST',
+    url: BRIDGE_URL,
+    headers: { 'Content-Type': 'application/json' },
+    data: json,
+    timeout: 8000,
+    onload: (res) => {
+      if (res.status >= 200 && res.status < 300) {
+        retryCount = 0;
+        actualizarInterfazExito();
+        console.info('[DeepSeek Session] Sesión enviada al bridge correctamente');
+      } else {
+        programarReintento();
+      }
+    },
+    onerror: () => {
+      programarReintento();
+    },
+    ontimeout: () => {
+      programarReintento();
+    },
+  });
+}
+
+function programarReintento(): void {
+  if (retryCount >= MAX_RETRIES) {
+    if (statusEl) {
+      statusEl.textContent = 'Puente no disponible';
+      (statusEl as HTMLElement).style.color = '#ef4444';
+    }
+    return;
+  }
+
+  retryCount++;
+  if (statusEl) {
+    statusEl.textContent = `Esperando CLI... (${retryCount}/${MAX_RETRIES})`;
+    (statusEl as HTMLElement).style.color = '#f59e0b';
+  }
+
+  setTimeout(enviarAlBridge, RETRY_INTERVAL_MS);
+}
+
+function actualizarInterfazExito(): void {
+  if (!statusEl || !sentBadge) return;
+  statusEl.textContent = 'Enviado a capi ✓';
+  (statusEl as HTMLElement).style.color = '#22c55e';
+  sentBadge.style.display = 'block';
+}
+
+function actualizarInterfaz(): void {
+  if (!panel || !statusEl) return;
+
+  if (tieneCredenciales()) {
+    statusEl.textContent = 'Credenciales listas — enviando...';
+    (statusEl as HTMLElement).style.color = '#a78bfa';
+    enviarAlBridge();
+  } else {
+    statusEl.textContent = `Esperando: ${hideToken(authorization)}`;
+    (statusEl as HTMLElement).style.color = '#f59e0b';
+  }
+}
+
+function crearInterfaz(): void {
+  if (document.getElementById('deepseek-session-panel')) return;
+
+  panel = document.createElement('div');
+  panel.id = 'deepseek-session-panel';
+  injectCss(`
+    #deepseek-session-panel {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 2147483647;
+      padding: 14px;
+      min-width: 210px;
+      border-radius: 12px;
+      background: rgba(15, 15, 20, 0.97);
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+    }
+    #deepseek-session-panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #a78bfa;
+    }
+    #deepseek-session-panel .ds-status {
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    #deepseek-session-panel .ds-sent {
+      display: none;
+      font-size: 11px;
+      color: #22c55e;
+      margin-bottom: 6px;
+    }
+    #deepseek-session-panel .ds-note {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      line-height: 1.4;
+    }
+  `, 'deepseek-session-panel-style');
+
+  statusEl = document.createElement('div');
+  statusEl.className = 'ds-status';
+  statusEl.textContent = 'Esperando credenciales...';
+
+  sentBadge = document.createElement('div');
+  sentBadge.className = 'ds-sent';
+  sentBadge.textContent = '✓ Sesión enviada a capi';
+
+  const note = document.createElement('div');
+  note.className = 'ds-note';
+  note.textContent = 'ds_session_id (HttpOnly) se configura manualmente en capi auth deepseek setDsSession';
+
+  panel.innerHTML = '<h3>🔑 DeepSeek Session</h3>';
+  panel.append(statusEl);
+  panel.append(sentBadge);
+  panel.append(note);
+  document.body.appendChild(panel);
+
+  actualizarInterfaz();
+}
+
+function capturarAuthorization(valor: string, origen: string): void {
   const auth = normalizeAuthorization(valor);
   if (!auth) return;
   const token = auth.replace(/^Bearer\s+/i, '');
   if (token.length < 20) return;
   if (authorization === auth) return;
   authorization = auth;
-  console.info(`[DeepSeek Session] Authorization capturada desde ${origen}: ${hideToken(auth)}`);
+  console.info(`[DeepSeek Session] Authorization capturada desde ${origen}`);
   actualizarInterfaz();
 }
 
@@ -47,13 +196,15 @@ function leerCookies(): void {
   try {
     const cookies = document.cookie.split('; ');
     for (const cookie of cookies) {
-      if (cookie.startsWith('.thumbcache_')) {
+      if (cookie.startsWith('.thumbcache_') && cookie !== thumbcache) {
         thumbcache = cookie;
-        console.info(`[DeepSeek Session] thumbcache capturada`);
+        console.info('[DeepSeek Session] thumbcache capturada');
+        actualizarInterfaz();
       }
-      if (cookie.startsWith('aws-waf-token=')) {
+      if (cookie.startsWith('aws-waf-token=') && cookie !== awsWafToken) {
         awsWafToken = cookie;
-        console.info(`[DeepSeek Session] aws-waf-token capturado`);
+        console.info('[DeepSeek Session] aws-waf-token capturado');
+        actualizarInterfaz();
       }
     }
   } catch (error) {
@@ -73,7 +224,7 @@ function leerLocalStorage(): void {
       token = raw as string;
     }
     if (typeof token === 'string' && token.length >= 20) {
-      guardarToken(token, 'localStorage.userToken');
+      capturarAuthorization(token, 'localStorage.userToken');
     }
   } catch (error) {
     console.warn('[DeepSeek Session] Error en localStorage:', error);
@@ -89,7 +240,7 @@ function interceptarXMLHttpRequest(): void {
 
   OrigXHR.prototype.setRequestHeader = function (nombre: string, valor: string) {
     if (String(nombre).toLowerCase() === 'authorization') {
-      guardarToken(String(valor), 'XMLHttpRequest');
+      capturarAuthorization(String(valor), 'XMLHttpRequest');
     }
     return originalSetHeader.apply(this, arguments as any);
   } as typeof OrigXHR.prototype.setRequestHeader;
@@ -105,195 +256,10 @@ function interceptarFetch(): void {
     try {
       const headers = new Headers(init?.headers as any);
       const auth = headers.get('authorization');
-      if (auth) guardarToken(auth, 'fetch');
+      if (auth) capturarAuthorization(auth, 'fetch');
     } catch {}
     return original.apply(this, arguments as any);
   } as typeof fetch;
-}
-
-function construirBundle(): object {
-  return {
-    source: 'deepseek',
-    capturedAt: new Date().toISOString(),
-    authorization,
-    cookies: {
-      thumbcache,
-      awsWafToken,
-      dsSessionId: getStoredValue<string | null>(STORAGE_KEY_MANUAL_DS_SESSION, null),
-    },
-  };
-}
-
-function enviarAlBridge(): void {
-  const bundle = construirBundle();
-  const json = JSON.stringify(bundle, null, 2);
-  setStoredValue(STORAGE_KEY_LAST_SENT, Date.now());
-
-  try {
-    GM_xmlhttpRequest({
-      method: 'POST',
-      url: BRIDGE_URL,
-      headers: { 'Content-Type': 'application/json' },
-      data: json,
-      timeout: 8000,
-      onload: (res) => {
-        if (res.status >= 200 && res.status < 300) {
-          if (sendBtn) sendBtn.textContent = 'Enviado ✓';
-          setTimeout(() => { if (sendBtn) sendBtn.textContent = 'Enviar al CLI'; }, 1800);
-        } else {
-          if (sendBtn) sendBtn.textContent = `Error ${res.status}`;
-          setTimeout(() => { if (sendBtn) sendBtn.textContent = 'Enviar al CLI'; }, 2000);
-        }
-      },
-      onerror: () => {
-        if (sendBtn) sendBtn.textContent = 'CLI no responde';
-        setTimeout(() => { if (sendBtn) sendBtn.textContent = 'Enviar al CLI'; }, 2000);
-      },
-      ontimeout: () => {
-        if (sendBtn) sendBtn.textContent = 'Timeout';
-        setTimeout(() => { if (sendBtn) sendBtn.textContent = 'Enviar al CLI'; }, 2000);
-      },
-    });
-  } catch {
-    if (sendBtn) sendBtn.textContent = 'Error';
-    setTimeout(() => { if (sendBtn) sendBtn.textContent = 'Enviar al CLI'; }, 2000);
-  }
-}
-
-function copiarJson(): void {
-  const bundle = construirBundle();
-  const json = JSON.stringify(bundle, null, 2);
-  try {
-    GM_setClipboard(json, 'text');
-    if (copyBtn) copyBtn.textContent = 'Copiado ✓';
-    setTimeout(() => { if (copyBtn) copyBtn.textContent = 'Copiar JSON'; }, 1500);
-  } catch {}
-}
-
-function tieneCredenciales(): boolean {
-  return !!(authorization && thumbcache && awsWafToken);
-}
-
-function actualizarInterfaz(): void {
-  if (!panel || !statusEl || !sendBtn || !copyBtn) return;
-
-  if (tieneCredenciales()) {
-    statusEl.textContent = 'Listo para enviar';
-    (statusEl as HTMLElement).style.color = '#22c55e';
-    sendBtn.disabled = false;
-    sendBtn.style.opacity = '1';
-    sendBtn.style.cursor = 'pointer';
-    copyBtn.style.display = 'inline-block';
-  } else {
-    statusEl.textContent = `Auth: ${hideToken(authorization)}`;
-    (statusEl as HTMLElement).style.color = '#f59e0b';
-    sendBtn.disabled = true;
-    sendBtn.style.opacity = '0.5';
-    sendBtn.style.cursor = 'not-allowed';
-    copyBtn.style.display = 'none';
-  }
-}
-
-function crearInterfaz(): void {
-  if (document.getElementById('deepseek-session-panel')) return;
-
-  panel = document.createElement('div');
-  panel.id = 'deepseek-session-panel';
-  injectCss(`
-    #deepseek-session-panel {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 2147483647;
-      padding: 14px;
-      min-width: 200px;
-      border-radius: 12px;
-      background: rgba(15, 15, 20, 0.97);
-      border: 1px solid rgba(255,255,255,0.14);
-      box-shadow: 0 10px 32px rgba(0,0,0,0.45);
-      color: #fff;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 13px;
-    }
-    #deepseek-session-panel h3 {
-      margin: 0 0 10px 0;
-      font-size: 14px;
-      font-weight: 700;
-      color: #a78bfa;
-    }
-    #deepseek-session-panel .ds-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 8px;
-      font-size: 12px;
-    }
-    #deepseek-session-panel .ds-status {
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-    #deepseek-session-panel .ds-btns {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    #deepseek-session-panel button {
-      flex: 1;
-      min-width: 90px;
-      padding: 7px 10px;
-      border: none;
-      border-radius: 7px;
-      font-weight: 600;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    #deepseek-session-panel .btn-send {
-      background: #7c3aed;
-      color: #fff;
-    }
-    #deepseek-session-panel .btn-copy {
-      background: #374151;
-      color: #fff;
-    }
-    #deepseek-session-panel .ds-note {
-      margin-top: 10px;
-      font-size: 11px;
-      color: rgba(255,255,255,0.45);
-      line-height: 1.4;
-    }
-  `, 'deepseek-session-panel-style');
-
-  statusEl = document.createElement('div');
-  statusEl.className = 'ds-status';
-
-  sendBtn = document.createElement('button');
-  sendBtn.className = 'btn-send';
-  sendBtn.textContent = 'Enviar al CLI';
-  sendBtn.disabled = true;
-  sendBtn.style.opacity = '0.5';
-  sendBtn.style.cursor = 'not-allowed';
-  sendBtn.addEventListener('click', enviarAlBridge);
-
-  copyBtn = document.createElement('button');
-  copyBtn.className = 'btn-copy';
-  copyBtn.textContent = 'Copiar JSON';
-  copyBtn.style.display = 'none';
-  copyBtn.addEventListener('click', copiarJson);
-
-  const note = document.createElement('div');
-  note.className = 'ds-note';
-  note.textContent = 'ds_session_id debe ingresarse manualmente en la CLI (es HttpOnly).';
-
-  panel.innerHTML = '<h3>🔑 DeepSeek Session</h3>';
-  panel.append(statusEl);
-  const btnsRow = document.createElement('div');
-  btnsRow.className = 'ds-btns';
-  panel.append(btnsRow);
-  btnsRow.append(sendBtn, copyBtn);
-  panel.append(note);
-  document.body.appendChild(panel);
-
-  actualizarInterfaz();
 }
 
 function iniciar(): void {
@@ -321,8 +287,6 @@ function boot(): void {
   } else {
     crearInterfaz();
   }
-
-  actualizarInterfaz();
 }
 
 boot();
