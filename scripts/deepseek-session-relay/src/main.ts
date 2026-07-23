@@ -3,7 +3,7 @@
 import { getStoredValue, setStoredValue } from '../../../shared/storage.ts';
 import { injectCss } from '../../../shared/style.ts';
 
-const BRIDGE_URL = 'http://127.0.0.1:3847/api/deepseek/session';
+const BRIDGE_URL = 'http://localhost:3847/api/deepseek/session';
 const STORAGE_KEY_ENABLED = 'deepseek:enabled';
 const STORAGE_KEY_MANUAL_DS_SESSION = 'deepseek:manualDsSessionId';
 
