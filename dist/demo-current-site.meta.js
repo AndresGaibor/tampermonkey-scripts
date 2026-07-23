@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Demo - Current Site Helper
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.10
+// @version      0.1.11
 // @author       Andres
 // @description  Script mínimo de ejemplo para crear nuevos userscripts desde este monorepo.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues

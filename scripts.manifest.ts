@@ -5,7 +5,7 @@ export const scripts = {
     userscript: {
       name: 'SRI - Comprobantes sincronizados manual',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '2026.6.12.20',
+      version: '2026.6.12.21',
       description:
         'Consulta API local, filtra meses, revisa TXT bajo demanda, pagina y descarga comprobantes recibidos en modo manual.',
       author: 'Andres',
@@ -30,7 +30,7 @@ export const scripts = {
     userscript: {
       name: 'Deuna Outlook → SriCache',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '1.0.17',
+      version: '1.0.18',
       description: 'Extrae recargas Deuna desde Outlook Web y las envía a SriCache',
       author: 'SriCache',
       match: [
@@ -58,7 +58,7 @@ export const scripts = {
     userscript: {
       name: 'Demo - Current Site Helper',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.1.10',
+      version: '0.1.11',
       description: 'Script mínimo de ejemplo para crear nuevos userscripts desde este monorepo.',
       author: 'Andres',
       match: ['https://example.com/*'],
@@ -73,7 +73,7 @@ export const scripts = {
     userscript: {
       name: 'DeepSeek - Session Relay + Stream Catcher',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.2.2',
+      version: '0.2.4',
       description: 'Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi. También intercepta el stream SSE para streaming en consola.',
       author: 'Andres',
       match: ['https://chat.deepseek.com/*'],
@@ -89,7 +89,7 @@ export const scripts = {
     userscript: {
       name: 'Better ChatGPT Assistant (asistente multifunción mejorado para ChatGPT web)',
       namespace: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
-      version: '8.2.3.15',
+      version: '8.2.3.16',
       description:
         'Better ChatGPT Assistant con Virtual Scroll Engine 6.0: chats largos ultra fluidos, exportación, monitor de tokens, i18n y más.',
       homepageURL: 'https://github.com/3150214587/chatgpt-virtual-scrollGPT-',
