@@ -267,11 +267,110 @@ function interceptarFetch(): void {
   } as typeof fetch;
 }
 
+function interceptarFetchStream(): void {
+  if (typeof unsafeWindow.fetch !== 'function' || (unsafeWindow as any).__capiStreamPatched) return;
+
+  (unsafeWindow as any).__capiStreamPatched = true;
+  const original = unsafeWindow.fetch;
+  (unsafeWindow.fetch as any).__capiStreamPatched = true;
+
+  unsafeWindow.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+
+    if (!url.includes('chat/completion')) {
+      return original.apply(this, arguments as any) as Promise<Response>;
+    }
+
+    try {
+      const response = await original.apply(this, arguments as any);
+
+      if (!response.ok || !response.body) {
+        return response;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const newStream = new ReadableStream({
+        async start(controller) {
+          const process = () => {
+            reader.read().then(({ done, value }) => {
+              if (done) {
+                try { controller.close(); } catch {}
+                (window as any).__capiStreamDone = true;
+                return;
+              }
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const raw = line.slice(6).trim();
+                if (!raw || raw === '[DONE]') continue;
+
+                try {
+                  const parsed = JSON.parse(raw);
+                  let obj = parsed;
+                  if (parsed.data !== undefined) {
+                    const dd = parsed.data;
+                    obj = typeof dd === 'string' ? JSON.parse(dd) : (dd || parsed);
+                  }
+
+                  (window as any).__capiStreamChunks = (window as any).__capiStreamChunks || [];
+
+                  if (obj.p?.startsWith('response/fragments')) {
+                    if (obj.p === 'response/fragments/-1/content') {
+                      const chunk = obj.v || '';
+                      (window as any).__capiStreamResponse = ((window as any).__capiStreamResponse || '') + chunk;
+                      (window as any).__capiStreamChunks.push({ type: 'RESPONSE', chunk });
+                    }
+                  } else if (obj.v?.response?.fragments) {
+                    for (const f of obj.v.response.fragments) {
+                      if (f.type === 'THINK') {
+                        (window as any).__capiStreamThink = ((window as any).__capiStreamThink || '') + (f.content || '');
+                        (window as any).__capiStreamChunks.push({ type: 'THINK', chunk: f.content || '' });
+                      } else if (f.type === 'RESPONSE') {
+                        (window as any).__capiStreamResponse = ((window as any).__capiStreamResponse || '') + (f.content || '');
+                        (window as any).__capiStreamChunks.push({ type: 'RESPONSE', chunk: f.content || '' });
+                      }
+                    }
+                  } else if (obj.event === 'close') {
+                    (window as any).__capiStreamDone = true;
+                  }
+                } catch {}
+              }
+
+              try { controller.enqueue(value); } catch {}
+              process();
+            }).catch((err) => {
+              try { controller.error(err); } catch {}
+            });
+          };
+
+          process();
+        },
+      });
+
+      return new Response(newStream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } catch (err) {
+      return original.apply(this, arguments as any) as Promise<Response>;
+    }
+  } as typeof fetch;
+}
+
 function iniciar(): void {
   leerCookies();
   leerLocalStorage();
   interceptarXMLHttpRequest();
   interceptarFetch();
+  interceptarFetchStream();
 }
 
 function boot(): void {

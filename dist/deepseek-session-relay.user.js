@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         DeepSeek - Session Relay
+// @name         DeepSeek - Session Relay + Stream Catcher
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.6
+// @version      0.2.1
 // @author       Andres
-// @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi.
+// @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi. También intercepta el stream SSE para streaming en consola.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
 // @downloadURL  https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/deepseek-session-relay.user.js
 // @updateURL    https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/deepseek-session-relay.user.js
@@ -267,11 +267,98 @@
 			return original.apply(this, arguments);
 		};
 	}
+	function interceptarFetchStream() {
+		if (typeof unsafeWindow.fetch !== "function" || unsafeWindow.__capiStreamPatched) return;
+		unsafeWindow.__capiStreamPatched = true;
+		const original = unsafeWindow.fetch;
+		unsafeWindow.fetch.__capiStreamPatched = true;
+		unsafeWindow.fetch = async function(input, init) {
+			if (!(typeof input === "string" ? input : input instanceof Request ? input.url : String(input)).includes("chat/completion")) return original.apply(this, arguments);
+			try {
+				const response = await original.apply(this, arguments);
+				if (!response.ok || !response.body) return response;
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				const newStream = new ReadableStream({ async start(controller) {
+					const process = () => {
+						reader.read().then(({ done, value }) => {
+							if (done) {
+								try {
+									controller.close();
+								} catch {}
+								window.__capiStreamDone = true;
+								return;
+							}
+							buffer += decoder.decode(value, { stream: true });
+							const lines = buffer.split("\n");
+							buffer = lines.pop() || "";
+							for (const line of lines) {
+								if (!line.startsWith("data: ")) continue;
+								const raw = line.slice(6).trim();
+								if (!raw || raw === "[DONE]") continue;
+								try {
+									const parsed = JSON.parse(raw);
+									let obj = parsed;
+									if (parsed.data !== void 0) {
+										const dd = parsed.data;
+										obj = typeof dd === "string" ? JSON.parse(dd) : dd || parsed;
+									}
+									window.__capiStreamChunks = window.__capiStreamChunks || [];
+									if (obj.p?.startsWith("response/fragments")) {
+										if (obj.p === "response/fragments/-1/content") {
+											const chunk = obj.v || "";
+											window.__capiStreamResponse = (window.__capiStreamResponse || "") + chunk;
+											window.__capiStreamChunks.push({
+												type: "RESPONSE",
+												chunk
+											});
+										}
+									} else if (obj.v?.response?.fragments) {
+										for (const f of obj.v.response.fragments) if (f.type === "THINK") {
+											window.__capiStreamThink = (window.__capiStreamThink || "") + (f.content || "");
+											window.__capiStreamChunks.push({
+												type: "THINK",
+												chunk: f.content || ""
+											});
+										} else if (f.type === "RESPONSE") {
+											window.__capiStreamResponse = (window.__capiStreamResponse || "") + (f.content || "");
+											window.__capiStreamChunks.push({
+												type: "RESPONSE",
+												chunk: f.content || ""
+											});
+										}
+									} else if (obj.event === "close") window.__capiStreamDone = true;
+								} catch {}
+							}
+							try {
+								controller.enqueue(value);
+							} catch {}
+							process();
+						}).catch((err) => {
+							try {
+								controller.error(err);
+							} catch {}
+						});
+					};
+					process();
+				} });
+				return new Response(newStream, {
+					status: response.status,
+					statusText: response.statusText,
+					headers: response.headers
+				});
+			} catch (err) {
+				return original.apply(this, arguments);
+			}
+		};
+	}
 	function iniciar() {
 		leerCookies();
 		leerLocalStorage();
 		interceptarXMLHttpRequest();
 		interceptarFetch();
+		interceptarFetchStream();
 	}
 	function boot() {
 		if (!getStoredValue(STORAGE_KEY_ENABLED, true)) return;
