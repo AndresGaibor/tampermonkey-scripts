@@ -65,13 +65,16 @@ function enviarAlBridge(): void {
         actualizarInterfazExito();
         console.info('[DeepSeek Session] Sesión enviada al bridge correctamente');
       } else {
+        console.warn(`[DeepSeek Session] Bridge respondió ${res.status}: ${res.statusText}`);
         programarReintento();
       }
     },
-    onerror: () => {
+    onerror: (err) => {
+      console.warn('[DeepSeek Session] GM_xmlhttpRequest onerror:', err);
       programarReintento();
     },
     ontimeout: () => {
+      console.warn('[DeepSeek Session] GM_xmlhttpRequest timeout');
       programarReintento();
     },
   });

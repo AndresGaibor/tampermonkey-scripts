@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepSeek - Session Relay
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.3
+// @version      0.1.4
 // @author       Andres
 // @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -96,12 +96,17 @@
 					retryCount = 0;
 					actualizarInterfazExito();
 					console.info("[DeepSeek Session] Sesión enviada al bridge correctamente");
-				} else programarReintento();
+				} else {
+					console.warn(`[DeepSeek Session] Bridge respondió ${res.status}: ${res.statusText}`);
+					programarReintento();
+				}
 			},
-			onerror: () => {
+			onerror: (err) => {
+				console.warn("[DeepSeek Session] GM_xmlhttpRequest onerror:", err);
 				programarReintento();
 			},
 			ontimeout: () => {
+				console.warn("[DeepSeek Session] GM_xmlhttpRequest timeout");
 				programarReintento();
 			}
 		});
