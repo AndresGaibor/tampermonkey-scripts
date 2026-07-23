@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         DeepSeek - Session Relay
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.5
+// @version      0.1.6
 // @author       Andres
 // @description  Captura Authorization y cookies de DeepSeek Chat y las envía al bridge local de capi.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
 // @downloadURL  https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/deepseek-session-relay.user.js
 // @updateURL    https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/deepseek-session-relay.user.js
 // @match        https://chat.deepseek.com/*
-// @connect      localhost:3847
-// @connect      127.0.0.1:3847
+// @connect      localhost
+// @connect      127.0.0.1
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_setValue
@@ -98,16 +98,14 @@
 					actualizarInterfazExito();
 					console.info("[DeepSeek Session] Sesión enviada al bridge correctamente");
 				} else {
-					console.warn(`[DeepSeek Session] Bridge respondió ${res.status}: ${res.statusText}`);
+					console.warn(`[DeepSeek Session] Bridge respondió ${res.status}`);
 					programarReintento();
 				}
 			},
-			onerror: (err) => {
-				console.warn("[DeepSeek Session] GM_xmlhttpRequest onerror:", err);
+			onerror: () => {
 				programarReintento();
 			},
 			ontimeout: () => {
-				console.warn("[DeepSeek Session] GM_xmlhttpRequest timeout");
 				programarReintento();
 			}
 		});
@@ -115,7 +113,7 @@
 	function programarReintento() {
 		if (retryCount >= MAX_RETRIES) {
 			if (statusEl) {
-				statusEl.textContent = "Puente no disponible";
+				statusEl.textContent = "CLI no disponible";
 				statusEl.style.color = "#ef4444";
 			}
 			return;

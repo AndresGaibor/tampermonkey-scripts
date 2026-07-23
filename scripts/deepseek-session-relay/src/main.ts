@@ -34,6 +34,10 @@ function tieneCredenciales(): boolean {
   return !!(authorization && thumbcache && awsWafToken);
 }
 
+function hashBundle(): string {
+  return [authorization, thumbcache, awsWafToken].join('|');
+}
+
 function construirBundle(): object {
   return {
     source: 'deepseek',
@@ -65,16 +69,14 @@ function enviarAlBridge(): void {
         actualizarInterfazExito();
         console.info('[DeepSeek Session] Sesión enviada al bridge correctamente');
       } else {
-        console.warn(`[DeepSeek Session] Bridge respondió ${res.status}: ${res.statusText}`);
+        console.warn(`[DeepSeek Session] Bridge respondió ${res.status}`);
         programarReintento();
       }
     },
-    onerror: (err) => {
-      console.warn('[DeepSeek Session] GM_xmlhttpRequest onerror:', err);
+    onerror: () => {
       programarReintento();
     },
     ontimeout: () => {
-      console.warn('[DeepSeek Session] GM_xmlhttpRequest timeout');
       programarReintento();
     },
   });
@@ -83,7 +85,7 @@ function enviarAlBridge(): void {
 function programarReintento(): void {
   if (retryCount >= MAX_RETRIES) {
     if (statusEl) {
-      statusEl.textContent = 'Puente no disponible';
+      statusEl.textContent = 'CLI no disponible';
       (statusEl as HTMLElement).style.color = '#ef4444';
     }
     return;
