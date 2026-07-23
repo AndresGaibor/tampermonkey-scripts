@@ -6,6 +6,8 @@ declare global {
   function GM_setValue<T = unknown>(key: string, value: T): void;
   function GM_registerMenuCommand(name: string, callback: () => void): void;
 
+  function GM_setClipboard(text: string, type?: string): void;
+
   function GM_xmlhttpRequest(options: {
     method?: string;
     url: string;

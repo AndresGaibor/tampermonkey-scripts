@@ -15,6 +15,8 @@
     "build:better-chatgpt-assistant": "bun tools/vite.ts build better-chatgpt-assistant",
     "dev:deuna-outlook": "bun tools/vite.ts dev deuna-outlook",
     "build:deuna-outlook": "bun tools/vite.ts build deuna-outlook",
+    "dev:deepseek": "bun tools/vite.ts dev deepseek-session-relay",
+    "build:deepseek": "bun tools/vite.ts build deepseek-session-relay",
     "build:all": "bun tools/build-all.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
