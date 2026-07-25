@@ -280,6 +280,11 @@ function interceptarFetchStream(): void {
     (window as any).__capiAllFetchCalls = (window as any).__capiAllFetchCalls || [];
     (window as any).__capiAllFetchCalls.push({ url, time: Date.now() });
 
+    console.log('[DeepSeek Stream] fetch called:', url);
+
+    (window as any).__capiFetchCalled = true;
+    (window as any).__capiFetchUrl = url;
+
     if (!url.includes('chat/completion')) {
       return original.apply(this, arguments as any) as Promise<Response>;
     }
