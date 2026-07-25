@@ -67,6 +67,21 @@ export const scripts = {
     },
   },
 
+  'capi-qwen-observador': {
+    fileName: 'capi-qwen-observador.user.js',
+    entry: 'scripts/capi-qwen-observador/src/main.ts',
+    userscript: {
+      name: 'CAPI - Qwen Observer',
+      namespace: 'https://github.com/AndresGaibor/userscripts',
+      version: '1.0.1',
+      description: 'Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.',
+      author: 'Andres',
+      match: ['https://chat.qwen.ai/*'],
+      grant: [],
+      'run-at': 'document-start',
+    },
+  },
+
   'deepseek-session-relay': {
     fileName: 'deepseek-session-relay.user.js',
     entry: 'scripts/deepseek-session-relay/src/main.ts',

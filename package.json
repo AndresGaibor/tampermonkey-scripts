@@ -19,7 +19,9 @@
     "build:deepseek": "bun tools/vite.ts build deepseek-session-relay",
     "build:all": "bun tools/build-all.ts",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "dev:qwen-observer": "bun tools/vite.ts dev capi-qwen-observador",
+    "build:qwen-observer": "bun tools/vite.ts build capi-qwen-observador"
   },
   "devDependencies": {
     "@types/node": "latest",
