@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.4
+// @version      1.1.5
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues

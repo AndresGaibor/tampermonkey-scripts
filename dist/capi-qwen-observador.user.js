@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.4
+// @version      1.1.5
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -71,6 +71,9 @@
 		const estado = error ? "error" : generando ? "pensando" : !turno ? "esperando_turno" : toolbar ? "completado" : completado ? "esperando_respuesta" : texto ? "respondiendo" : "desconocido";
 		return {
 			version: 2,
+			versionObservador: "1.1.5",
+			instanciaId: "pendiente",
+			iniciadoEn: ahora,
 			proveedor: "qwen",
 			conversacionId: conversacionActual(pathname),
 			turnoId,
@@ -83,9 +86,15 @@
 		};
 	}
 	if (typeof window !== "undefined" && typeof document !== "undefined") {
+		window.__CAPI_QWEN_OBSERVER_CONTROL__?.detener();
+		const iniciadoEn = Date.now();
+		const instanciaId = `qwen-${iniciadoEn}-${Math.random().toString(36).slice(2, 8)}`;
 		const estado = {
-			...inspeccionarQwen(document, location.pathname, Date.now()),
-			ultimoCambioRealEn: Date.now(),
+			...inspeccionarQwen(document, location.pathname, iniciadoEn),
+			versionObservador: "1.1.5",
+			instanciaId,
+			iniciadoEn,
+			ultimoCambioRealEn: iniciadoEn,
 			mutacionesTotales: 0,
 			cambiosRelevantes: 0
 		};
@@ -95,6 +104,8 @@
 		}
 		publicarCompartido();
 		let temporizador;
+		let intervalo;
+		let observador;
 		function publicar() {
 			const actual = inspeccionarQwen();
 			estado.mutacionesTotales++;
@@ -111,13 +122,23 @@
 			if (temporizador) clearTimeout(temporizador);
 			temporizador = window.setTimeout(publicar, 300);
 		}
+		function detener() {
+			if (temporizador) clearTimeout(temporizador);
+			if (intervalo) clearInterval(intervalo);
+			observador?.disconnect();
+		}
 		function iniciar() {
-			new MutationObserver(programar).observe(document.documentElement, {
+			observador = new MutationObserver(programar);
+			observador.observe(document.documentElement, {
 				subtree: true,
 				childList: true,
 				attributes: true
 			});
-			window.setInterval(publicar, 15e3);
+			intervalo = window.setInterval(publicar, 15e3);
+			window.__CAPI_QWEN_OBSERVER_CONTROL__ = {
+				versionObservador: "1.1.5",
+				detener
+			};
 			publicar();
 		}
 		if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar, { once: true });

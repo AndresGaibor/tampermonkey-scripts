@@ -12,3 +12,6 @@ test('el artefacto de Qwen es ejecutable y no concatena use strict con un IIFE',
 import { test as testMeta, expect as expectMeta } from 'bun:test';
 import { readFileSync } from 'node:fs';
 testMeta('Qwen se publica en MAIN_WORLD y en canal DOM compartido',()=>{const s=readFileSync('dist/capi-qwen-observador.user.js','utf8');expectMeta(s).toContain('// @grant        none');expectMeta(s).toContain('// @sandbox      raw');expectMeta(s).toContain('dataset.capiQwenBridge');});
+
+import { test as testInstancia, expect as expectInstancia } from 'bun:test';
+testInstancia('expone version e instancia y reemplaza observadores antiguos',()=>{const s=readFileSync('dist/capi-qwen-observador.user.js','utf8');expectInstancia(s).toContain('versionObservador');expectInstancia(s).toContain('instanciaId');expectInstancia(s).toContain('__CAPI_QWEN_OBSERVER_CONTROL__');expectInstancia(s).toContain('.detener()');});
