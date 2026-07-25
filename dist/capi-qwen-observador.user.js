@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.6
+// @version      1.1.7
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -88,7 +88,7 @@
 		const instanciaId = `qwen-${iniciadoEn}-${Math.random().toString(36).slice(2, 8)}`;
 		const estado = {
 			...inspeccionarQwen(document, location.pathname, iniciadoEn),
-			versionObservador: "1.1.5",
+			versionObservador: "1.1.7",
 			instanciaId,
 			iniciadoEn,
 			ultimoCambioRealEn: iniciadoEn,
@@ -133,7 +133,7 @@
 			});
 			intervalo = window.setInterval(publicar, 15e3);
 			window.__CAPI_QWEN_OBSERVER_CONTROL__ = {
-				versionObservador: "1.1.5",
+				versionObservador: "1.1.7",
 				detener
 			};
 			publicar();

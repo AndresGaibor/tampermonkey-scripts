@@ -5,7 +5,7 @@ export interface ObservacionQwenCapiV2 {
   firmaTurno: string|null; firmaEstado: string; disponible: true;
 }
 export interface EstadoQwenCapiV2 extends ObservacionQwenCapiV2 {
-  versionObservador: '1.1.5'; instanciaId: string; iniciadoEn: number; ultimoCambioRealEn: number;
+  versionObservador: '1.1.7'; instanciaId: string; iniciadoEn: number; ultimoCambioRealEn: number;
   mutacionesTotales: number; cambiosRelevantes: number;
 }
 declare global { interface Window { __CAPI_QWEN_BRIDGE__?: EstadoQwenCapiV2; __CAPI_QWEN_OBSERVER_CONTROL__?: { versionObservador:string; detener:()=>void } } }
@@ -57,7 +57,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const iniciadoEn=Date.now();
   const instanciaId=`qwen-${iniciadoEn}-${Math.random().toString(36).slice(2,8)}`;
   const inicial=inspeccionarQwen(document,location.pathname,iniciadoEn);
-  const estado:EstadoQwenCapiV2={...inicial,versionObservador:'1.1.5',instanciaId,iniciadoEn,ultimoCambioRealEn:iniciadoEn,mutacionesTotales:0,cambiosRelevantes:0};
+  const estado:EstadoQwenCapiV2={...inicial,versionObservador:'1.1.7',instanciaId,iniciadoEn,ultimoCambioRealEn:iniciadoEn,mutacionesTotales:0,cambiosRelevantes:0};
   function publicarCompartido(){
     window.__CAPI_QWEN_BRIDGE__=estado;
     document.documentElement.dataset.capiQwenBridge=JSON.stringify(estado);
@@ -67,6 +67,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   function publicar(){const actual=inspeccionarQwen();estado.mutacionesTotales++;if(actual.firmaEstado!==estado.firmaEstado){estado.cambiosRelevantes++;estado.ultimoCambioRealEn=actual.actualizadoEn}Object.assign(estado,actual);publicarCompartido();window.dispatchEvent(new CustomEvent('capi:qwen-estado',{detail:{...estado}}));}
   function programar(){estado.mutacionesTotales++;if(temporizador)clearTimeout(temporizador);temporizador=window.setTimeout(publicar,300)}
   function detener(){if(temporizador)clearTimeout(temporizador);if(intervalo)clearInterval(intervalo);observador?.disconnect();}
-  function iniciar(){observador=new MutationObserver(programar);observador.observe(document.documentElement,{subtree:true,childList:true,attributes:true});intervalo=window.setInterval(publicar,15_000);window.__CAPI_QWEN_OBSERVER_CONTROL__={versionObservador:'1.1.5',detener};publicar()}
+  function iniciar(){observador=new MutationObserver(programar);observador.observe(document.documentElement,{subtree:true,childList:true,attributes:true});intervalo=window.setInterval(publicar,15_000);window.__CAPI_QWEN_OBSERVER_CONTROL__={versionObservador:'1.1.7',detener};publicar()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',iniciar,{once:true});else iniciar();
 }
