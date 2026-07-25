@@ -24,7 +24,9 @@
     "build:qwen-observer": "bun tools/vite.ts build capi-qwen-observador"
   },
   "devDependencies": {
+    "@types/jsdom": "^28.0.3",
     "@types/node": "latest",
+    "jsdom": "^29.1.1",
     "typescript": "latest",
     "vite": "latest",
     "vite-plugin-monkey": "latest"

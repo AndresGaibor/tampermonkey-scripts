@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.0.1
+// @version      1.1.0
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -13,35 +13,97 @@
 
 (function() {
 	"use strict";
-	var estado = {
-		version: 1,
-		estado: "desconocido",
-		generando: false,
-		actualizadoEn: Date.now(),
-		turnoId: null,
-		mutaciones: 0
+	var selectoresTurno = [
+		"[data-message-author-role=\"assistant\"]",
+		"[data-role=\"assistant\"]",
+		"article[data-testid*=\"assistant\"]",
+		"[class*=\"message\"] [class*=\"assistant\"]",
+		"[class*=\"chat-message\"]"
+	];
+	var visible = (e) => {
+		const r = e.getBoundingClientRect();
+		const s = getComputedStyle(e);
+		return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden";
 	};
-	window.__CAPI_QWEN_BRIDGE__ = estado;
-	function actualizarEstado() {
-		const texto = document.body?.innerText ?? "";
-		const generando = [...document.querySelectorAll("button,[role=\"button\"]")].some((boton) => /stop|detener/i.test(`${boton.getAttribute("aria-label") ?? ""} ${boton.textContent ?? ""}`));
-		const pensamientoCompletado = /pensamiento completado/i.test(texto);
-		estado.generando = generando;
-		estado.estado = generando ? "pensando" : pensamientoCompletado ? "esperando_respuesta" : "esperando_turno";
-		estado.actualizadoEn = Date.now();
-		estado.mutaciones += 1;
-		window.dispatchEvent(new CustomEvent("capi:qwen-estado", { detail: { ...estado } }));
+	var hash = (s) => {
+		let h = 2166136261;
+		for (let i = 0; i < s.length; i++) {
+			h ^= s.charCodeAt(i);
+			h = Math.imul(h, 16777619);
+		}
+		return (h >>> 0).toString(36);
+	};
+	function conversacionActual(pathname = location.pathname) {
+		return pathname.match(/\/c\/([^/?#]+)/)?.[1] ?? null;
 	}
-	function iniciarObservador() {
-		const raiz = document.documentElement;
-		if (raiz) new MutationObserver(actualizarEstado).observe(raiz, {
-			subtree: true,
-			childList: true,
-			attributes: true
-		});
-		window.setInterval(actualizarEstado, 15e3);
-		actualizarEstado();
+	function ultimoTurnoAsistente(doc = document) {
+		const vistos = new Set();
+		const candidatos = [];
+		for (const sel of selectoresTurno) for (const e of doc.querySelectorAll(sel)) if (!vistos.has(e) && visible(e)) {
+			vistos.add(e);
+			candidatos.push(e);
+		}
+		return candidatos.at(-1) ?? null;
 	}
-	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciarObservador, { once: true });
-	else iniciarObservador();
+	function inspeccionarQwen(doc = document, pathname = location.pathname, ahora = Date.now()) {
+		const turno = ultimoTurnoAsistente(doc);
+		const generando = [...doc.querySelectorAll("button,[role=\"button\"]")].some((b) => visible(b) && /stop|detener|cancel generation/i.test(`${b.getAttribute("aria-label") ?? ""} ${b.textContent ?? ""}`));
+		const texto = (turno?.innerText || turno?.textContent || "").trim();
+		const toolbar = !!turno?.querySelector("button,[role=\"toolbar\"],[data-testid*=\"copy\"]");
+		const error = !!turno?.querySelector("[role=\"alert\"],[class*=\"error\"]");
+		const completado = /pensamiento completado/i.test(texto);
+		const longitudBucket = Math.min(99, Math.floor(texto.length / 200));
+		const nodos = turno?.querySelectorAll("*").length ?? 0;
+		const turnoId = turno?.getAttribute("data-message-id") || turno?.id || turno?.getAttribute("data-id") || null;
+		const firmaTurno = turno ? hash(`${turnoId ?? "anon"}:${nodos}:${longitudBucket}:${toolbar ? 1 : 0}:${generando ? 1 : 0}`) : null;
+		const estado = error ? "error" : generando ? "pensando" : !turno ? "esperando_turno" : toolbar ? "completado" : completado ? "esperando_respuesta" : texto ? "respondiendo" : "desconocido";
+		return {
+			version: 2,
+			proveedor: "qwen",
+			conversacionId: conversacionActual(pathname),
+			turnoId,
+			estado,
+			generando,
+			actualizadoEn: ahora,
+			firmaTurno,
+			firmaEstado: hash(`${estado}:${generando ? 1 : 0}:${firmaTurno ?? "none"}`),
+			disponible: true
+		};
+	}
+	if (typeof window !== "undefined" && typeof document !== "undefined") {
+		const estado = {
+			...inspeccionarQwen(document, location.pathname, Date.now()),
+			ultimoCambioRealEn: Date.now(),
+			mutacionesTotales: 0,
+			cambiosRelevantes: 0
+		};
+		window.__CAPI_QWEN_BRIDGE__ = estado;
+		let temporizador;
+		function publicar() {
+			const actual = inspeccionarQwen();
+			estado.mutacionesTotales++;
+			if (actual.firmaEstado !== estado.firmaEstado) {
+				estado.cambiosRelevantes++;
+				estado.ultimoCambioRealEn = actual.actualizadoEn;
+			}
+			Object.assign(estado, actual);
+			window.dispatchEvent(new CustomEvent("capi:qwen-estado", { detail: { ...estado } }));
+		}
+		function programar() {
+			estado.mutacionesTotales++;
+			if (temporizador) clearTimeout(temporizador);
+			temporizador = window.setTimeout(publicar, 300);
+		}
+		function iniciar() {
+			new MutationObserver(programar).observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				attributes: true
+			});
+			window.setInterval(publicar, 15e3);
+			publicar();
+		}
+		if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar, { once: true });
+		else iniciar();
+	}
 })();

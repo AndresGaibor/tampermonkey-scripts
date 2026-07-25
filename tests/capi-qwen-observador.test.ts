@@ -1,0 +1,8 @@
+import {expect,test} from 'bun:test';
+import {JSDOM} from 'jsdom';
+import {conversacionActual, inspeccionarQwen} from '../scripts/capi-qwen-observador/src/main';
+function dom(html:string){const d=new JSDOM(html,{url:'https://chat.qwen.ai/c/conv-1'});Object.defineProperty(d.window.HTMLElement.prototype,'getBoundingClientRect',{value(){return {width:100,height:20,left:0,top:0,right:100,bottom:20,x:0,y:0,toJSON(){}}}});Object.defineProperty(d.window,'getComputedStyle',{value:()=>({display:'block',visibility:'visible'})});Object.assign(globalThis,{getComputedStyle:d.window.getComputedStyle});return d.window.document;}
+test('identifica conversación',()=>expect(conversacionActual('/c/abc')).toBe('abc'));
+test('usa solo el último turno y no un pensamiento antiguo',()=>{const d=dom(`<div data-message-author-role="assistant">Pensamiento completado<button>Copiar</button></div><div data-message-author-role="assistant" data-message-id="nuevo">respuesta nueva</div>`);const r=inspeccionarQwen(d,'/c/conv-1',100);expect(r.turnoId).toBe('nuevo');expect(r.estado).toBe('respondiendo');});
+test('publica únicamente telemetría saneada',()=>{const d=dom(`<div data-message-author-role="assistant" data-message-id="t1">SECRETO PRIVADO<button>Copiar</button></div>`);const r=inspeccionarQwen(d,'/c/x',100) as any;expect(JSON.stringify(r)).not.toContain('SECRETO PRIVADO');expect(r.firmaTurno).toBeTruthy();expect(r.version).toBe(2);});
+test('detecta generación activa',()=>{const d=dom(`<div data-message-author-role="assistant" id="t"><span>pensando</span></div><button aria-label="Stop generation">x</button>`);expect(inspeccionarQwen(d,'/c/x',100).estado).toBe('pensando');});

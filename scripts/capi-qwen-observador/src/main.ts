@@ -1,66 +1,45 @@
-export {};
+export type EstadoQwenCapi = 'esperando_turno'|'pensando'|'esperando_respuesta'|'respondiendo'|'completado'|'error'|'desconocido';
+export interface EstadoQwenCapiV2 {
+  version: 2; proveedor: 'qwen'; conversacionId: string|null; turnoId: string|null;
+  estado: EstadoQwenCapi; generando: boolean; actualizadoEn: number; ultimoCambioRealEn: number;
+  mutacionesTotales: number; cambiosRelevantes: number; firmaTurno: string|null; firmaEstado: string; disponible: true;
+}
+declare global { interface Window { __CAPI_QWEN_BRIDGE__?: EstadoQwenCapiV2 } }
 
-type EstadoQwenCapi = {
-  version: 1;
-  estado: 'desconocido' | 'pensando' | 'esperando_respuesta' | 'esperando_turno';
-  generando: boolean;
-  actualizadoEn: number;
-  turnoId: string | null;
-  mutaciones: number;
-};
-
-declare global {
-  interface Window {
-    __CAPI_QWEN_BRIDGE__?: EstadoQwenCapi;
-  }
+const selectoresTurno = [
+  '[data-message-author-role="assistant"]','[data-role="assistant"]','article[data-testid*="assistant"]',
+  '[class*="message"] [class*="assistant"]','[class*="chat-message"]'
+];
+const visible=(e:Element)=>{const r=(e as HTMLElement).getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
+const hash=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)};
+export function conversacionActual(pathname=location.pathname):string|null { return pathname.match(/\/c\/([^/?#]+)/)?.[1]??null; }
+export function ultimoTurnoAsistente(doc:Document=document):HTMLElement|null {
+  const vistos=new Set<Element>(); const candidatos:HTMLElement[]=[];
+  for(const sel of selectoresTurno) for(const e of doc.querySelectorAll(sel)) if(!vistos.has(e)&&visible(e)){vistos.add(e);candidatos.push(e as HTMLElement)}
+  return candidatos.at(-1)??null;
+}
+export function inspeccionarQwen(doc:Document=document, pathname=location.pathname, ahora=Date.now()):Omit<EstadoQwenCapiV2,'mutacionesTotales'|'cambiosRelevantes'|'ultimoCambioRealEn'> {
+  const turno=ultimoTurnoAsistente(doc); const controles=[...doc.querySelectorAll<HTMLElement>('button,[role="button"]')];
+  const generando=controles.some(b=>visible(b)&&/stop|detener|cancel generation/i.test(`${b.getAttribute('aria-label')??''} ${b.textContent??''}`));
+  const texto=(turno?.innerText||turno?.textContent||'').trim();
+  const toolbar=!!turno?.querySelector('button,[role="toolbar"],[data-testid*="copy"]');
+  const error=!!turno?.querySelector('[role="alert"],[class*="error"]');
+  const completado=/pensamiento completado/i.test(texto);
+  const longitudBucket=Math.min(99,Math.floor(texto.length/200));
+  const nodos=turno?.querySelectorAll('*').length??0;
+  const turnoId=turno?.getAttribute('data-message-id')||turno?.id||turno?.getAttribute('data-id')||null;
+  const firmaTurno=turno?hash(`${turnoId??'anon'}:${nodos}:${longitudBucket}:${toolbar?1:0}:${generando?1:0}`):null;
+  const estado:EstadoQwenCapi=error?'error':generando?'pensando':!turno?'esperando_turno':toolbar?'completado':completado?'esperando_respuesta':texto?'respondiendo':'desconocido';
+  return {version:2,proveedor:'qwen',conversacionId:conversacionActual(pathname),turnoId,estado,generando,actualizadoEn:ahora,firmaTurno,firmaEstado:hash(`${estado}:${generando?1:0}:${firmaTurno??'none'}`),disponible:true};
 }
 
-const estado: EstadoQwenCapi = {
-  version: 1,
-  estado: 'desconocido',
-  generando: false,
-  actualizadoEn: Date.now(),
-  turnoId: null,
-  mutaciones: 0,
-};
-
-window.__CAPI_QWEN_BRIDGE__ = estado;
-
-function actualizarEstado(): void {
-  const texto = document.body?.innerText ?? '';
-  const botones = [...document.querySelectorAll<HTMLElement>('button,[role="button"]')];
-  const generando = botones.some((boton) =>
-    /stop|detener/i.test(`${boton.getAttribute('aria-label') ?? ''} ${boton.textContent ?? ''}`),
-  );
-  const pensamientoCompletado = /pensamiento completado/i.test(texto);
-
-  estado.generando = generando;
-  estado.estado = generando
-    ? 'pensando'
-    : pensamientoCompletado
-      ? 'esperando_respuesta'
-      : 'esperando_turno';
-  estado.actualizadoEn = Date.now();
-  estado.mutaciones += 1;
-
-  window.dispatchEvent(new CustomEvent('capi:qwen-estado', { detail: { ...estado } }));
-}
-
-function iniciarObservador(): void {
-  const raiz = document.documentElement;
-  if (raiz) {
-    new MutationObserver(actualizarEstado).observe(raiz, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-    });
-  }
-  window.setInterval(actualizarEstado, 15_000);
-  actualizarEstado();
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', iniciarObservador, { once: true });
-} else {
-  iniciarObservador();
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  const inicial=inspeccionarQwen(document,location.pathname,Date.now());
+  const estado:EstadoQwenCapiV2={...inicial,ultimoCambioRealEn:Date.now(),mutacionesTotales:0,cambiosRelevantes:0};
+  window.__CAPI_QWEN_BRIDGE__=estado;
+  let temporizador:number|undefined;
+  function publicar(){const actual=inspeccionarQwen();estado.mutacionesTotales++;if(actual.firmaEstado!==estado.firmaEstado){estado.cambiosRelevantes++;estado.ultimoCambioRealEn=actual.actualizadoEn}Object.assign(estado,actual);window.dispatchEvent(new CustomEvent('capi:qwen-estado',{detail:{...estado}}));}
+  function programar(){estado.mutacionesTotales++;if(temporizador)clearTimeout(temporizador);temporizador=window.setTimeout(publicar,300)}
+  function iniciar(){new MutationObserver(programar).observe(document.documentElement,{subtree:true,childList:true,attributes:true});window.setInterval(publicar,15_000);publicar()}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',iniciar,{once:true});else iniciar();
 }
