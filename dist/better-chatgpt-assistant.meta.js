@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name              Better ChatGPT Assistant (asistente multifunción mejorado para ChatGPT web)
 // @namespace         https://github.com/3150214587/chatgpt-virtual-scrollGPT-
-// @version           8.2.3.17
+// @version           8.2.3.18
 // @author            3150214587
 // @description       Better ChatGPT Assistant con Virtual Scroll Engine 6.0: chats largos ultra fluidos, exportación, monitor de tokens, i18n y más.
 // @description:es    Asistente multifunción estable para ChatGPT: virtualización de conversaciones largas + indicador superior minimalista (verde/amarillo/rojo) + panel con 3 modos / pausa / optimización forzada / nueva conversación / ayuda + atenuación al escribir + Ctrl+F + resize + exportación Markdown (UTF-8 BOM) + plegado de código + estimación de tokens + cambio ES/EN

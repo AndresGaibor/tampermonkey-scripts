@@ -8,3 +8,7 @@ test('el artefacto de Qwen es ejecutable y no concatena use strict con un IIFE',
   expect(contenido).not.toContain('"use strict"(() =>');
   expect(() => new Function(contenido.replace(/^\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==\s*/, ''))).not.toThrow();
 });
+
+import { test as testMeta, expect as expectMeta } from 'bun:test';
+import { readFileSync } from 'node:fs';
+testMeta('Qwen se publica en MAIN_WORLD y en canal DOM compartido',()=>{const s=readFileSync('dist/capi-qwen-observador.user.js','utf8');expectMeta(s).toContain('// @grant        none');expectMeta(s).toContain('// @sandbox      raw');expectMeta(s).toContain('dataset.capiQwenBridge');});

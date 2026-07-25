@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.1
+// @version      1.1.3
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
 // @downloadURL  https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/capi-qwen-observador.user.js
 // @updateURL    https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/capi-qwen-observador.user.js
 // @match        https://chat.qwen.ai/*
-// @grant        unsafeWindow
+// @sandbox      raw
+// @grant        none
 // @run-at       document-start
 // ==/UserScript==
 
@@ -78,7 +79,11 @@
 			mutacionesTotales: 0,
 			cambiosRelevantes: 0
 		};
-		window.__CAPI_QWEN_BRIDGE__ = estado;
+		function publicarCompartido() {
+			window.__CAPI_QWEN_BRIDGE__ = estado;
+			document.documentElement.dataset.capiQwenBridge = JSON.stringify(estado);
+		}
+		publicarCompartido();
 		let temporizador;
 		function publicar() {
 			const actual = inspeccionarQwen();
@@ -88,6 +93,7 @@
 				estado.ultimoCambioRealEn = actual.actualizadoEn;
 			}
 			Object.assign(estado, actual);
+			publicarCompartido();
 			window.dispatchEvent(new CustomEvent("capi:qwen-estado", { detail: { ...estado } }));
 		}
 		function programar() {
