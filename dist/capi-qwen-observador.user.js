@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.5
+// @version      1.1.6
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -71,9 +71,6 @@
 		const estado = error ? "error" : generando ? "pensando" : !turno ? "esperando_turno" : toolbar ? "completado" : completado ? "esperando_respuesta" : texto ? "respondiendo" : "desconocido";
 		return {
 			version: 2,
-			versionObservador: "1.1.5",
-			instanciaId: "pendiente",
-			iniciadoEn: ahora,
 			proveedor: "qwen",
 			conversacionId: conversacionActual(pathname),
 			turnoId,

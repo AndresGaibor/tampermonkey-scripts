@@ -9,3 +9,5 @@ test('detecta generación activa',()=>{const d=dom(`<div data-message-author-rol
 
 
 test('no confunde entradas de la barra lateral con turnos asistentes',()=>{const d=dom(`<aside id="sidebar"><div class="chat-message">respuesta antigua</div></aside><main><div class="chat-container-statement">aviso</div></main>`);expect(ultimoTurnoAsistente(d)).toBeNull();expect(inspeccionarQwen(d,'/c/c',1).estado).toBe('esperando_turno')});
+
+test('la observación DOM no sobrescribe metadatos de instancia',()=>{const d=dom(`<main><div data-message-author-role="assistant">ok<button>Copiar</button></div></main>`);const r=inspeccionarQwen(d,'/c/x',200) as any;expect(r.instanciaId).toBeUndefined();expect(r.iniciadoEn).toBeUndefined();expect(r.versionObservador).toBeUndefined();});

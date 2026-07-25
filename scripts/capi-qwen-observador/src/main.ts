@@ -1,8 +1,12 @@
 export type EstadoQwenCapi = 'esperando_turno'|'pensando'|'esperando_respuesta'|'respondiendo'|'completado'|'error'|'desconocido';
-export interface EstadoQwenCapiV2 {
-  version: 2; versionObservador: '1.1.5'; instanciaId: string; iniciadoEn: number; proveedor: 'qwen'; conversacionId: string|null; turnoId: string|null;
-  estado: EstadoQwenCapi; generando: boolean; actualizadoEn: number; ultimoCambioRealEn: number;
-  mutacionesTotales: number; cambiosRelevantes: number; firmaTurno: string|null; firmaEstado: string; disponible: true;
+export interface ObservacionQwenCapiV2 {
+  version: 2; proveedor: 'qwen'; conversacionId: string|null; turnoId: string|null;
+  estado: EstadoQwenCapi; generando: boolean; actualizadoEn: number;
+  firmaTurno: string|null; firmaEstado: string; disponible: true;
+}
+export interface EstadoQwenCapiV2 extends ObservacionQwenCapiV2 {
+  versionObservador: '1.1.5'; instanciaId: string; iniciadoEn: number; ultimoCambioRealEn: number;
+  mutacionesTotales: number; cambiosRelevantes: number;
 }
 declare global { interface Window { __CAPI_QWEN_BRIDGE__?: EstadoQwenCapiV2; __CAPI_QWEN_OBSERVER_CONTROL__?: { versionObservador:string; detener:()=>void } } }
 
@@ -33,7 +37,7 @@ export function ultimoTurnoAsistente(doc:Document=document):HTMLElement|null {
   }
   return candidatos.at(-1)??null;
 }
-export function inspeccionarQwen(doc:Document=document, pathname=location.pathname, ahora=Date.now()):Omit<EstadoQwenCapiV2,'mutacionesTotales'|'cambiosRelevantes'|'ultimoCambioRealEn'> {
+export function inspeccionarQwen(doc:Document=document, pathname=location.pathname, ahora=Date.now()):ObservacionQwenCapiV2 {
   const turno=ultimoTurnoAsistente(doc); const controles=[...doc.querySelectorAll<HTMLElement>('button,[role="button"]')];
   const generando=controles.some(b=>visible(b)&&/stop|detener|cancel generation/i.test(`${b.getAttribute('aria-label')??''} ${b.textContent??''}`));
   const texto=(turno?.innerText||turno?.textContent||'').trim();
@@ -45,7 +49,7 @@ export function inspeccionarQwen(doc:Document=document, pathname=location.pathna
   const turnoId=turno?.getAttribute('data-message-id')||turno?.id||turno?.getAttribute('data-id')||null;
   const firmaTurno=turno?hash(`${turnoId??'anon'}:${nodos}:${longitudBucket}:${toolbar?1:0}:${generando?1:0}`):null;
   const estado:EstadoQwenCapi=error?'error':generando?'pensando':!turno?'esperando_turno':toolbar?'completado':completado?'esperando_respuesta':texto?'respondiendo':'desconocido';
-  return {version:2,versionObservador:'1.1.5',instanciaId:'pendiente',iniciadoEn:ahora,proveedor:'qwen',conversacionId:conversacionActual(pathname),turnoId,estado,generando,actualizadoEn:ahora,firmaTurno,firmaEstado:hash(`${estado}:${generando?1:0}:${firmaTurno??'none'}`),disponible:true};
+  return {version:2,proveedor:'qwen',conversacionId:conversacionActual(pathname),turnoId,estado,generando,actualizadoEn:ahora,firmaTurno,firmaEstado:hash(`${estado}:${generando?1:0}:${firmaTurno??'none'}`),disponible:true};
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
