@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CAPI - Qwen Observer
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      1.1.3
+// @version      1.1.4
 // @author       Andres
 // @description  Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -19,8 +19,15 @@
 		"[data-message-author-role=\"assistant\"]",
 		"[data-role=\"assistant\"]",
 		"article[data-testid*=\"assistant\"]",
-		"[class*=\"message\"] [class*=\"assistant\"]",
-		"[class*=\"chat-message\"]"
+		"[class*=\"message\"][class*=\"assistant\"]",
+		"[class*=\"assistant-message\"]"
+	];
+	var selectoresAreaConversacion = [
+		"main",
+		"[class*=\"chat-content\"]",
+		"[class*=\"conversation\"]",
+		"[class*=\"message-list\"]",
+		"[class*=\"chat-list\"]"
 	];
 	var visible = (e) => {
 		const r = e.getBoundingClientRect();
@@ -39,9 +46,12 @@
 		return pathname.match(/\/c\/([^/?#]+)/)?.[1] ?? null;
 	}
 	function ultimoTurnoAsistente(doc = document) {
+		const areas = selectoresAreaConversacion.flatMap((sel) => [...doc.querySelectorAll(sel)]).filter(visible);
+		const raices = areas.length ? areas : [doc.body];
 		const vistos = new Set();
 		const candidatos = [];
-		for (const sel of selectoresTurno) for (const e of doc.querySelectorAll(sel)) if (!vistos.has(e) && visible(e)) {
+		for (const raiz of raices) for (const sel of selectoresTurno) for (const e of raiz.querySelectorAll(sel)) {
+			if (vistos.has(e) || !visible(e) || e.closest("#sidebar,.sidebar,.session-list,.sidebar-wrapper")) continue;
 			vistos.add(e);
 			candidatos.push(e);
 		}

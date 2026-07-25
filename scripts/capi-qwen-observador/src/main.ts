@@ -7,15 +7,30 @@ export interface EstadoQwenCapiV2 {
 declare global { interface Window { __CAPI_QWEN_BRIDGE__?: EstadoQwenCapiV2 } }
 
 const selectoresTurno = [
-  '[data-message-author-role="assistant"]','[data-role="assistant"]','article[data-testid*="assistant"]',
-  '[class*="message"] [class*="assistant"]','[class*="chat-message"]'
+  '[data-message-author-role="assistant"]',
+  '[data-role="assistant"]',
+  'article[data-testid*="assistant"]',
+  '[class*="message"][class*="assistant"]',
+  '[class*="assistant-message"]'
+];
+const selectoresAreaConversacion = [
+  'main',
+  '[class*="chat-content"]',
+  '[class*="conversation"]',
+  '[class*="message-list"]',
+  '[class*="chat-list"]'
 ];
 const visible=(e:Element)=>{const r=(e as HTMLElement).getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
 const hash=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)};
 export function conversacionActual(pathname=location.pathname):string|null { return pathname.match(/\/c\/([^/?#]+)/)?.[1]??null; }
 export function ultimoTurnoAsistente(doc:Document=document):HTMLElement|null {
+  const areas=selectoresAreaConversacion.flatMap(sel=>[...doc.querySelectorAll(sel)]).filter(visible);
+  const raices=areas.length?areas:[doc.body];
   const vistos=new Set<Element>(); const candidatos:HTMLElement[]=[];
-  for(const sel of selectoresTurno) for(const e of doc.querySelectorAll(sel)) if(!vistos.has(e)&&visible(e)){vistos.add(e);candidatos.push(e as HTMLElement)}
+  for(const raiz of raices) for(const sel of selectoresTurno) for(const e of raiz.querySelectorAll(sel)) {
+    if(vistos.has(e)||!visible(e)||e.closest('#sidebar,.sidebar,.session-list,.sidebar-wrapper')) continue;
+    vistos.add(e); candidatos.push(e as HTMLElement);
+  }
   return candidatos.at(-1)??null;
 }
 export function inspeccionarQwen(doc:Document=document, pathname=location.pathname, ahora=Date.now()):Omit<EstadoQwenCapiV2,'mutacionesTotales'|'cambiosRelevantes'|'ultimoCambioRealEn'> {

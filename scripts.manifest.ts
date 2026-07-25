@@ -73,7 +73,7 @@ export const scripts = {
     userscript: {
       name: 'CAPI - Qwen Observer',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '1.1.3',
+      version: '1.1.4',
       description: 'Publica telemetría local saneada del estado de Qwen para CAPI sin capturar prompts, respuestas, cookies ni tokens.',
       author: 'Andres',
       match: ['https://chat.qwen.ai/*'],
