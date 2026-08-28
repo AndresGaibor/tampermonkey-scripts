@@ -105,7 +105,7 @@ export const scripts = {
     userscript: {
       name: 'ChatGPT - Bulk Markdown Exporter',
       namespace: 'https://github.com/AndresGaibor/userscripts',
-      version: '0.1.4',
+      version: '0.1.5',
       description: 'Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.',
       author: 'Andres',
       match: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
