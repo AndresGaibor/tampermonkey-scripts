@@ -7,8 +7,13 @@ import { buildZip, downloadBytes } from '../infrastructure/download.ts';
 export function mountSelectionTrigger(target: HTMLElement, onClick?: () => void): HTMLButtonElement {
   const existing = target.ownerDocument.querySelector<HTMLButtonElement>('[data-cbe-selection-trigger="true"]');
   if (existing?.isConnected) return existing;
-  const button = target.ownerDocument.createElement('button'); button.type = 'button'; button.textContent = 'Seleccionar chats'; button.dataset.cbeSelectionTrigger = 'true'; button.setAttribute('aria-label', 'Seleccionar chats');
-  button.style.display = 'block'; button.style.width = '100%'; button.style.textAlign = 'left'; button.addEventListener('click', () => onClick?.());
+  const button = target.ownerDocument.createElement('button');
+  button.type = 'button';
+  button.className = 'cbe-menu-item';
+  button.dataset.cbeSelectionTrigger = 'true';
+  button.setAttribute('aria-label', 'Seleccionar chats');
+  button.innerHTML = `<span class="cbe-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 6.5h10M4 12h10M4 17.5h6"/><path d="m17 7 1.5 1.5L21 6"/><rect x="16" y="14" width="5" height="5" rx="1"/></svg></span><span class="cbe-menu-label">Seleccionar chats</span>`;
+  button.addEventListener('click', () => onClick?.());
   target.prepend(button); return button;
 }
 

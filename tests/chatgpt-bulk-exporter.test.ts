@@ -64,7 +64,11 @@ describe('selection and sidebar', () => {
     const target = findSidebarMountTarget(root);
     expect(target).not.toBeNull();
     mountSelectionTrigger(target!);
-    expect(root.querySelector('[data-cbe-selection-trigger="true"]')).not.toBeNull();
+    const trigger = root.querySelector<HTMLButtonElement>('[data-cbe-selection-trigger="true"]');
+    expect(trigger).not.toBeNull();
+    expect(trigger?.classList.contains('cbe-menu-item')).toBe(true);
+    expect(trigger?.querySelector('svg')).not.toBeNull();
+    expect(trigger?.querySelector('.cbe-menu-label')?.textContent).toBe('Seleccionar chats');
     mountSelectionTrigger(target!);
     expect(root.querySelectorAll('[data-cbe-selection-trigger="true"]')).toHaveLength(1);
   });

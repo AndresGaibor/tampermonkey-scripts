@@ -929,12 +929,10 @@
 		if (existing?.isConnected) return existing;
 		const button = target.ownerDocument.createElement("button");
 		button.type = "button";
-		button.textContent = "Seleccionar chats";
+		button.className = "cbe-menu-item";
 		button.dataset.cbeSelectionTrigger = "true";
 		button.setAttribute("aria-label", "Seleccionar chats");
-		button.style.display = "block";
-		button.style.width = "100%";
-		button.style.textAlign = "left";
+		button.innerHTML = `<span class="cbe-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 6.5h10M4 12h10M4 17.5h6"/><path d="m17 7 1.5 1.5L21 6"/><rect x="16" y="14" width="5" height="5" rx="1"/></svg></span><span class="cbe-menu-label">Seleccionar chats</span>`;
 		button.addEventListener("click", () => onClick?.());
 		target.prepend(button);
 		return button;
@@ -1012,7 +1010,7 @@
 		});
 		refresh();
 	}
-	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px}#cbe-root button{border:0;border-radius:6px;padding:6px 9px;color:inherit;background:var(--interactive-bg-secondary-default,transparent);cursor:pointer}#cbe-root button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-root button:focus-visible,#cbe-root input:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}#cbe-root button:disabled{opacity:.5;cursor:not-allowed}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}`;
+	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px}#cbe-root button{font:inherit;border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-item:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:-2px}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-menu-item[hidden]{display:none!important}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions button{border-radius:6px;padding:6px 9px;background:var(--interactive-bg-secondary-default,transparent)}#cbe-actions button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}`;
 	function start() {
 		const style = document.createElement("style");
 		style.dataset.cbeStyles = "true";
