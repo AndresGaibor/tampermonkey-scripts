@@ -28,9 +28,12 @@ async function saveDirectory(handle: DirectoryHandle): Promise<void> {
 }
 
 export async function chooseDirectory(): Promise<DirectoryHandle> {
-  const picker = (globalThis as typeof globalThis & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker;
-  if (!picker) throw new Error('Tu navegador no soporta selección de carpetas. Usa Exportar ZIP.');
-  const handle = await picker(); await saveDirectory(handle); return handle;
+  type PickerWindow = typeof globalThis & { showDirectoryPicker?: () => Promise<DirectoryHandle> };
+  const sandboxWindow = globalThis as PickerWindow & { unsafeWindow?: PickerWindow };
+  const pageWindow = sandboxWindow.unsafeWindow ?? sandboxWindow;
+  const picker = pageWindow.showDirectoryPicker;
+  if (!picker) throw new Error('Brave no expone selección de carpetas al userscript. Revisa que estés en https://chatgpt.com y usa Exportar ZIP como alternativa.');
+  const handle = await picker.call(pageWindow); await saveDirectory(handle); return handle;
 }
 
 export async function hasDirectoryPermission(handle: DirectoryHandle): Promise<boolean> { return (await (handle as PermissionedDirectoryHandle).queryPermission({ mode: 'readwrite' })) === 'granted'; }
