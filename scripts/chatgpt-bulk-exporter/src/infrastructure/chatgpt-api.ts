@@ -2,6 +2,10 @@ import { normalizeConversation, type Conversation } from '../domain/conversation
 import { normalizeTimestamp } from '../domain/dates.ts';
 import type { SidebarConversation } from '../domain/conversation-filter.ts';
 
+export function conversationToSidebarMetadata(conversation: Conversation, href = `/c/${encodeURIComponent(conversation.id)}`): SidebarConversation {
+  return { id: conversation.id, title: conversation.title, href, createdAt: conversation.createdAt, updatedAt: conversation.updatedAt };
+}
+
 export class ConversationFormatError extends Error { name = 'ConversationFormatError'; }
 
 export async function fetchConversation(conversationId: string, signal?: AbortSignal): Promise<Conversation> {

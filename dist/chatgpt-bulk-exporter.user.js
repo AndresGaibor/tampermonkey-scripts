@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.9
+// @version      0.1.10
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -9,6 +9,8 @@
 // @updateURL    https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist/chatgpt-bulk-exporter.user.js
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -284,6 +286,15 @@
 			cancelled: false
 		};
 	}
+	function conversationToSidebarMetadata(conversation, href = `/c/${encodeURIComponent(conversation.id)}`) {
+		return {
+			id: conversation.id,
+			title: conversation.title,
+			href,
+			createdAt: conversation.createdAt,
+			updatedAt: conversation.updatedAt
+		};
+	}
 	var ConversationFormatError = class extends Error {
 		name = "ConversationFormatError";
 	};
@@ -389,6 +400,92 @@
 			offset += items.length;
 		}
 		return conversations;
+	}
+	var CACHE_KEY = "cbe:conversation-date-cache:v1";
+	var CACHE_TTL_MS = 1440 * 60 * 1e3;
+	function validEntry(value) {
+		if (!value || typeof value !== "object") return false;
+		const entry = value;
+		const validDate = (date) => date === null || typeof date === "number" && Number.isFinite(date);
+		return typeof entry.id === "string" && entry.id.trim() !== "" && typeof entry.title === "string" && validDate(entry.createdAt) && validDate(entry.updatedAt) && typeof entry.validatedAt === "number" && Number.isFinite(entry.validatedAt);
+	}
+	var ConversationDateCache = class {
+		storage;
+		constructor(storage) {
+			this.storage = storage;
+		}
+		load(now = Date.now()) {
+			const raw = this.storage.get(CACHE_KEY);
+			if (!Array.isArray(raw)) return [];
+			return raw.filter(validEntry).filter((entry) => now - entry.validatedAt < CACHE_TTL_MS).sort((a, b) => b.validatedAt - a.validatedAt).slice(0, 500);
+		}
+		save(entries, now = Date.now()) {
+			const deduped = new Map();
+			for (const entry of entries) if (validEntry(entry)) deduped.set(entry.id, {
+				...entry,
+				validatedAt: Number.isFinite(entry.validatedAt) ? entry.validatedAt : now
+			});
+			this.storage.set(CACHE_KEY, [...deduped.values()].sort((a, b) => b.validatedAt - a.validatedAt).slice(0, 500));
+		}
+	};
+	var tampermonkeyDateCache = new ConversationDateCache({
+		get: (key) => typeof GM_getValue === "function" ? GM_getValue(key, []) : [],
+		set: (key, value) => {
+			if (typeof GM_setValue === "function") GM_setValue(key, value);
+		}
+	});
+	function cachedToSidebarConversation(entry, fallback) {
+		return {
+			...fallback,
+			title: entry.title || fallback.title,
+			createdAt: entry.createdAt === null ? null : new Date(entry.createdAt),
+			updatedAt: entry.updatedAt === null ? null : new Date(entry.updatedAt)
+		};
+	}
+	async function indexConversationDates(options) {
+		const { conversations, cache, fetchConversation, signal, onUpdate, onProgress } = options;
+		const now = options.now ?? Date.now();
+		const entries = cache.load(now);
+		const byId = new Map(entries.map((entry) => [entry.id, entry]));
+		const stale = [];
+		for (const conversation of conversations) {
+			const cached = byId.get(conversation.id);
+			if (cached) onUpdate?.(cachedToSidebarConversation(cached, conversation));
+			if (!cached || now - cached.validatedAt >= 864e5) stale.push(conversation);
+		}
+		let loaded = 0;
+		const report = () => onProgress?.({
+			loaded: ++loaded,
+			total: stale.length
+		});
+		let cursor = 0;
+		const worker = async () => {
+			while (true) {
+				if (signal?.aborted) return;
+				const conversation = stale[cursor++];
+				if (!conversation) return;
+				try {
+					const result = await fetchConversation(conversation.id, signal);
+					if (signal?.aborted) return;
+					const metadata = conversationToSidebarMetadata(result, conversation.href);
+					byId.set(conversation.id, {
+						id: metadata.id,
+						title: metadata.title,
+						createdAt: metadata.createdAt?.getTime() ?? null,
+						updatedAt: metadata.updatedAt?.getTime() ?? null,
+						validatedAt: now
+					});
+					onUpdate?.(metadata);
+				} catch (error) {
+					if (error instanceof DOMException && error.name === "AbortError") return;
+				} finally {
+					report();
+				}
+			}
+		};
+		const count = Math.min(Math.max(options.concurrency ?? 3, 1), Math.max(stale.length, 1));
+		await Promise.all(Array.from({ length: count }, worker));
+		if (!signal?.aborted) cache.save([...byId.values()], now);
 	}
 	var u8 = Uint8Array, u16 = Uint16Array, i32 = Int32Array;
 	var fleb = new u8([
@@ -1114,6 +1211,10 @@
 		let indexController = null;
 		let conversations = [];
 		let historyState = "idle";
+		let progress = {
+			loaded: 0,
+			total: null
+		};
 		let field = "updated";
 		let filterOpen = false;
 		root = document.createElement("div");
@@ -1204,18 +1305,19 @@
 			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
 			exportButton.textContent = `Exportar (${store.size})`;
 			exportButton.disabled = store.size === 0 || controller !== null;
-			const filteringDisabled = historyState === "loading" || historyState === "error";
+			const filteringDisabled = historyState === "loading";
 			select.disabled = filteringDisabled;
 			fields.querySelectorAll("input").forEach((input) => {
 				input.disabled = filteringDisabled;
 			});
-			const visible = historyState === "loading" ? [] : historyState === "error" ? conversations : invalid ? [] : filterConversations(conversations, field, current);
+			const visible = historyState === "loading" ? [] : invalid ? [] : filterConversations(conversations, field, current);
 			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading";
 			clear.disabled = store.size === 0;
 			overlay.hidden = popover.hidden;
 			list.replaceChildren();
 			empty.hidden = historyState === "loading" || visible.length > 0;
-			empty.textContent = invalid ? "Corrige el rango de fechas." : historyState === "error" && visible.length === 0 ? "" : conversations.length === 0 ? "No hay chats disponibles." : "No hay chats que coincidan con este filtro.";
+			empty.textContent = invalid ? "Corrige el rango de fechas." : conversations.length === 0 ? "No hay chats disponibles." : "No hay chats que coincidan con este filtro.";
+			if (historyState === "indexing") status.textContent = `Indexando fechas ${progress.loaded}/${progress.total ?? conversations.length}`;
 			for (const conversation of visible) {
 				const row = document.createElement("label");
 				row.className = `cbe-filter-row${store.has(conversation.id) ? " is-selected" : ""}`;
@@ -1246,12 +1348,54 @@
 				refresh();
 			});
 		};
+		const startProgressiveIndex = (activeController) => {
+			historyState = conversations.length ? "indexing" : "error";
+			progress = {
+				loaded: 0,
+				total: conversations.length
+			};
+			status.textContent = conversations.length ? `Indexando fechas 0/${conversations.length}` : "No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.";
+			refresh();
+			if (!conversations.length) return;
+			indexConversationDates({
+				conversations,
+				cache: tampermonkeyDateCache,
+				fetchConversation,
+				signal: activeController.signal,
+				onUpdate: (updated) => {
+					if (indexController !== activeController) return;
+					conversations = conversations.map((chat) => chat.id === updated.id ? updated : chat);
+					refresh();
+				},
+				onProgress: (value) => {
+					if (indexController !== activeController) return;
+					progress = value;
+					refresh();
+				}
+			}).then(() => {
+				if (indexController === activeController && !activeController.signal.aborted) {
+					historyState = "ready";
+					status.textContent = `${conversations.length} chats disponibles`;
+					refresh();
+				}
+			}).catch((caught) => {
+				if (!(caught instanceof DOMException && caught.name === "AbortError") && indexController === activeController) {
+					historyState = "error";
+					status.textContent = "No se pudieron indexar todas las fechas; los resultados disponibles siguen utilizables.";
+					refresh();
+				}
+			});
+		};
 		const loadHistory = async () => {
 			indexController?.abort();
 			const activeController = new AbortController();
 			indexController = activeController;
 			historyState = "loading";
 			conversations = [];
+			progress = {
+				loaded: 0,
+				total: null
+			};
 			status.textContent = "Cargando historial…";
 			refresh();
 			try {
@@ -1259,28 +1403,26 @@
 					signal: activeController.signal,
 					onProgress: (value) => {
 						if (indexController !== activeController) return;
+						progress = value;
 						status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`;
 					}
 				});
 				if (indexController !== activeController) return;
-				if (conversations.length === 0) {
-					conversations = visibleLinks();
-					historyState = conversations.length ? "error" : "ready";
-					status.textContent = conversations.length ? "Mostrando los chats visibles. Puedes seleccionarlos y exportarlos." : "No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.";
+				const hasDates = conversations.some((chat) => chat.createdAt || chat.updatedAt);
+				if (!conversations.length || !hasDates) {
+					if (!conversations.length) conversations = visibleLinks();
+					startProgressiveIndex(activeController);
 				} else {
 					historyState = "ready";
 					status.textContent = `${conversations.length} chats disponibles`;
+					refresh();
+					indexController = null;
 				}
-				refresh();
 			} catch (caught) {
 				if (caught instanceof DOMException && caught.name === "AbortError") return;
 				if (indexController !== activeController) return;
 				conversations = visibleLinks();
-				historyState = "error";
-				status.textContent = "No se pudo cargar el historial completo. Puedes exportar los chats visibles, pero el filtro por fecha no está disponible.";
-				refresh();
-			} finally {
-				if (indexController === activeController) indexController = null;
+				startProgressiveIndex(activeController);
 			}
 		};
 		const exit = () => {

@@ -11,6 +11,9 @@ import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/pres
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
 import { filterConversations, hasInvertedRange, parseDateInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
+import { CACHE_KEY, CACHE_MAX_ENTRIES, CACHE_TTL_MS, ConversationDateCache, type CachedConversationDate } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/conversation-date-cache.ts';
+import { indexConversationDates } from '../scripts/chatgpt-bulk-exporter/src/application/progressive-date-indexer.ts';
+import { conversationToSidebarMetadata } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
 
 const raw = (current_node = 'a') => ({
   conversation_id: 'c1', title: 'Demo', create_time: 1724672589, update_time: 1724672706,
@@ -145,6 +148,30 @@ describe('historial paginado', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
     try { const result = await fetchConversationHistory({ pageSize: 28 }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; }
+  });
+});
+
+describe('índice progresivo y caché de fechas', () => {
+  const base = (id: string): SidebarConversation => ({ id, title: id, href: `/c/${id}`, createdAt: null, updatedAt: null });
+  test('carga solo entradas válidas y vigentes y limita la caché a 500', () => {
+    const values = new Map<string, unknown>();
+    values.set(CACHE_KEY, [{ id: 'fresh', title: 'Fresh', createdAt: 1, updatedAt: 2, validatedAt: 1_000 }, { id: 'expired', title: 'Old', createdAt: 1, updatedAt: 2, validatedAt: 0 }, { id: '', title: 'Bad', createdAt: 1, updatedAt: 2, validatedAt: 1_000 }]);
+    const cache = new ConversationDateCache({ get: key => values.get(key), set: (key, value) => values.set(key, value) });
+    expect(cache.load(1_000 + CACHE_TTL_MS - 1).map(entry => entry.id)).toEqual(['fresh']);
+    cache.save(Array.from({ length: 501 }, (_, index) => ({ id: `c${index}`, title: '', createdAt: null, updatedAt: null, validatedAt: index })), 2_000);
+    expect((values.get(CACHE_KEY) as CachedConversationDate[])).toHaveLength(CACHE_MAX_ENTRIES);
+  });
+  test('convierte metadata de detalle e indexa progresivamente con errores aislados', async () => {
+    const values = new Map<string, unknown>(); const cache = new ConversationDateCache({ get: key => values.get(key), set: (key, value) => values.set(key, value) });
+    const updates: string[] = []; const progress: string[] = [];
+    await indexConversationDates({ conversations: [base('a'), base('bad'), base('c')], cache, concurrency: 1, now: 2_000, fetchConversation: async id => { if (id === 'bad') throw new Error('no'); return normalizeConversation({ ...raw(), conversation_id: id, create_time: 30, update_time: 40 }); }, onUpdate: chat => updates.push(`${chat.id}:${chat.createdAt?.getTime()}`), onProgress: value => progress.push(`${value.loaded}/${value.total}`) });
+    expect(updates).toEqual(['a:30000', 'c:30000']); expect(progress).toEqual(['1/3', '2/3', '3/3']);
+    const converted = conversationToSidebarMetadata(normalizeConversation(raw())); expect(converted.id).toBe('c1');
+  });
+  test('respeta concurrencia y aborta sin iniciar trabajos posteriores', async () => {
+    const cache = new ConversationDateCache({ get: () => [], set: () => {} }); let active = 0; let max = 0; const controller = new AbortController();
+    await indexConversationDates({ conversations: ['a', 'b', 'c', 'd'].map(base), cache, concurrency: 2, signal: controller.signal, fetchConversation: async id => { active++; max = Math.max(max, active); await new Promise(resolve => setTimeout(resolve, 2)); active--; if (id === 'a') controller.abort(); return normalizeConversation({ ...raw(), conversation_id: id }); } });
+    expect(max).toBeLessThanOrEqual(2);
   });
 });
 

@@ -80,6 +80,16 @@ La interfaz debe sentirse como una extensión nativa del sidebar de ChatGPT, no 
 
 La lógica de selección, filtrado, exportación secuencial, privacidad y ZIP no cambia; solo se reorganiza la presentación y su interacción.
 
+## Índice progresivo de fechas (aprobado)
+
+Cuando `GET /backend-api/conversations` falle, devuelva una lista vacía o no contenga timestamps útiles, el script construirá un índice de fechas progresivo a partir de los enlaces de conversación descubiertos en el sidebar. Para cada ID que no tenga un registro vigente en caché, consultará `GET /backend-api/conversation/:id`, extraerá y normalizará `create_time` y `update_time` de la respuesta de detalle, y actualizará la fila sin esperar a completar todos los chats.
+
+El índice se guardará con `GM_getValue`/`GM_setValue` como metadatos mínimos por ID (título, fechas, momento de validación); nunca se guardará contenido, mensajes ni nodos de conversación. Los registros tendrán una expiración definida. Al abrir el selector, los datos cacheados se mostrarán de inmediato; únicamente los faltantes o vencidos se revalidarán. La caché se depurará por antigüedad y tendrá un límite de entradas para evitar crecimiento indefinido.
+
+Las solicitudes de detalle tendrán concurrencia limitada, respetarán un único `AbortSignal` y se detendrán al cerrar el popover. Un error de una conversación se registrará como fecha desconocida solo para esa conversación y no bloqueará el resto. La interfaz indicará `Indexando fechas X/Y` mientras haya trabajo pendiente y mantendrá funcional el filtro con el subconjunto ya fechado: las conversaciones sin fecha se excluyen únicamente cuando el usuario haya activado un rango o campo temporal.
+
+La fuente principal seguirá siendo el índice de ChatGPT cuando esté disponible; el índice progresivo es el fallback para recuperar fechas reales, no una sustitución de la exportación. Las pruebas cubrirán lectura/escritura/expiración de caché, extracción de fechas del detalle, progreso parcial, concurrencia, cancelación y continuidad ante fallos individuales.
+
 ## Alcance
 
-No se persiste contenido de conversaciones, no se altera `main`, no se hace merge/push y no se implementa una API pública de ChatGPT. La prueba manual en navegador queda condicionada a disponer de una sesión autenticada. El filtro no intenta recuperar metadatos faltantes mediante una petición por cada chat.
+No se persiste contenido de conversaciones, no se altera `main`, no se hace merge/push y no se implementa una API pública de ChatGPT. La prueba manual en navegador queda condicionada a disponer de una sesión autenticada.
