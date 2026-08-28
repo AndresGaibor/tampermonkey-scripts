@@ -56,6 +56,10 @@ bun run list
 - `chatgpt-bulk-exporter` - selección y exportación secuencial de chats ChatGPT a un ZIP Markdown.
 - `bump:userscripts` - actualiza las versiones de los userscripts antes del commit.
 
+### Sincronización local de ChatGPT
+
+En `chatgpt-bulk-exporter`, abre `Exportar chats` y usa `Elegir carpeta ChatGPT` para autorizar una carpeta local. El script guarda un Markdown por conversación y `manifest.json`; luego `Sincronizar ahora` solo procesa chats nuevos o modificados. Si la autorización continúa vigente, intenta sincronizar una vez al abrir ChatGPT. La función requiere un navegador con File System Access API (por ejemplo, Chrome/Edge); `Exportar ZIP` sigue disponible en cualquier navegador compatible con el userscript.
+
 ## Desarrollar el script del SRI
 
 ```bash

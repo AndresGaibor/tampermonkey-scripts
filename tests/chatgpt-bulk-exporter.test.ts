@@ -16,6 +16,7 @@ import { CACHE_KEY, CACHE_MAX_ENTRIES, CACHE_TTL_MS, ConversationDateCache, type
 import { indexConversationDates } from '../scripts/chatgpt-bulk-exporter/src/application/progressive-date-indexer.ts';
 import { conversationToSidebarMetadata } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
 import { styles } from '../scripts/chatgpt-bulk-exporter/src/presentation/styles.ts';
+import { syncConversations, syncSummary } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/folder-sync.ts';
 
 const raw = (current_node = 'a') => ({
   conversation_id: 'c1', title: 'Demo', create_time: 1724672589, update_time: 1724672706,
@@ -278,6 +279,14 @@ describe('exportBatch and zip', () => {
     const controller = new AbortController(); const order: string[] = [];
     const result = await exportBatch({ conversationIds: ['a', 'b'], signal: controller.signal, fetchConversation: async id => { order.push(id); controller.abort(); return normalizeConversation(raw()); }, now: new Date(0) });
     expect(order).toEqual(['a']); expect(result.cancelled).toBe(true);
+  });
+  test('sincroniza Markdown y omite conversaciones sin cambios', async () => {
+    const files = new Map<string, string>();
+    const handle = { queryPermission: async () => 'granted', requestPermission: async () => 'granted', getFileHandle: async (name: string) => ({ getFile: async () => ({ text: async () => files.get(name) ?? '' }), createWritable: async () => { let value = ''; return { write: async (content: string) => { value = content; }, close: async () => { files.set(name, value); }, abort: async () => {} }; } }) } as unknown as FileSystemDirectoryHandle;
+    const conversation = normalizeConversation(raw()); const metadata = conversationToSidebarMetadata(conversation);
+    const first = await syncConversations({ handle, conversations: [metadata], fetchConversation: async () => conversation, now: new Date(0) });
+    const second = await syncConversations({ handle, conversations: [metadata], fetchConversation: async () => conversation, now: new Date(0) });
+    expect(first.written).toBe(1); expect(second.skipped).toBe(1); expect(files.has('manifest.json')).toBe(true); expect(syncSummary(first)).toContain('1 actualizado');
   });
   test('ZIP contiene solo éxitos y UTF-8', async () => {
     const bytes = buildZip([{ name: 'ChatGPT-á.md', content: '# Hola ñ' }]);

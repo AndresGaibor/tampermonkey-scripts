@@ -71,6 +71,14 @@ El filtro valida límites antes de cambiar resultados. Un timestamp inválido se
 
 Se añadirán tests unitarios con Bun para normalización, ramas, fechas, Markdown, filenames, selección, descubrimiento/decoración DOM, secuencialidad, errores parciales, cancelación y ZIP. Para esta ampliación se cubrirán además extracción de metadatos, formato local fecha/hora, límites inclusivos, rango invertido, timestamps desconocidos, filtrado por ambos campos, sincronización de selección, envío del token Bearer, renovación única tras `401`, ausencia de filtración del token en errores, extracción DOM limitada al chat abierto y resumen de lotes parciales. Cada bloque se desarrollará con ciclo RED/GREEN/REFACTOR.
 
+## Sincronización local aprobada
+
+La interfaz conserva `Exportar ZIP` y añade `Elegir carpeta ChatGPT` y `Sincronizar ahora`. La carpeta se autoriza mediante File System Access API y el `FileSystemDirectoryHandle` se conserva en IndexedDB; no se persisten tokens ni contenido de conversaciones en el almacenamiento del userscript. La primera sincronización obtiene el historial y exporta cada conversación a un Markdown individual dentro de la carpeta elegida, junto con `manifest.json`.
+
+El manifest registra por ID el nombre de archivo, título y `update_time`. Las sincronizaciones posteriores comparan esos metadatos y solo solicitan/escriben conversaciones nuevas o modificadas. No se borran archivos locales cuando una conversación desaparece del historial remoto. La sincronización se ejecuta automáticamente una vez al cargar ChatGPT si existe un handle autorizado y también puede iniciarse manualmente. Si el navegador no ofrece File System Access API o el permiso fue revocado, se muestra un error accionable y el ZIP continúa funcionando.
+
+La escritura usa nombres saneados y evita colisiones, escribe el Markdown y después actualiza el manifest. Los fallos individuales no detienen el lote; la interfaz informa procesadas, omitidas y fallidas. Todo el contenido permanece en ChatGPT y en la carpeta local seleccionada.
+
 ## Rediseño visual aprobado
 
 La interfaz debe sentirse como una extensión nativa del sidebar de ChatGPT, no como una toolbar independiente:

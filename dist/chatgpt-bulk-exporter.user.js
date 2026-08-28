@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.19
+// @version      0.1.21
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -1297,6 +1297,121 @@
 		anchor.click();
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
+	var DB_NAME = "cbe-local-sync";
+	var STORE_NAME = "settings";
+	var HANDLE_KEY = "directory";
+	var MANIFEST = "manifest.json";
+	function indexedDb() {
+		return typeof indexedDB === "undefined" ? null : indexedDB;
+	}
+	async function getSavedDirectory() {
+		const db = indexedDb();
+		if (!db) return null;
+		return new Promise((resolve, reject) => {
+			const request = db.open(DB_NAME, 1);
+			request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => {
+				const get = request.result.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(HANDLE_KEY);
+				get.onerror = () => reject(get.error);
+				get.onsuccess = () => resolve(get.result ?? null);
+			};
+		});
+	}
+	async function saveDirectory(handle) {
+		const db = indexedDb();
+		if (!db) throw new Error("Este navegador no permite guardar la carpeta local.");
+		return new Promise((resolve, reject) => {
+			const request = db.open(DB_NAME, 1);
+			request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => {
+				const tx = request.result.transaction(STORE_NAME, "readwrite");
+				tx.objectStore(STORE_NAME).put(handle, HANDLE_KEY);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			};
+		});
+	}
+	async function chooseDirectory() {
+		const picker = globalThis.showDirectoryPicker;
+		if (!picker) throw new Error("Tu navegador no soporta selección de carpetas. Usa Exportar ZIP.");
+		const handle = await picker();
+		await saveDirectory(handle);
+		return handle;
+	}
+	async function hasDirectoryPermission(handle) {
+		return await handle.queryPermission({ mode: "readwrite" }) === "granted";
+	}
+	async function ensurePermission(handle) {
+		const permissioned = handle;
+		if (await permissioned.queryPermission({ mode: "readwrite" }) === "granted") return;
+		if (await permissioned.requestPermission({ mode: "readwrite" }) !== "granted") throw new Error("El permiso para escribir en la carpeta ChatGPT fue rechazado.");
+	}
+	async function readManifest(handle) {
+		try {
+			const file = await (await handle.getFileHandle(MANIFEST)).getFile();
+			const parsed = JSON.parse(await file.text());
+			if (parsed.version === 1 && parsed.conversations && typeof parsed.conversations === "object") return parsed;
+		} catch {}
+		return {
+			version: 1,
+			updatedAt: new Date(0).toISOString(),
+			conversations: {}
+		};
+	}
+	async function writeText(handle, filename, content) {
+		const writable = await (await handle.getFileHandle(filename, { create: true })).createWritable();
+		try {
+			await writable.write(content);
+			await writable.close();
+		} catch (error) {
+			await writable.abort();
+			throw error;
+		}
+	}
+	async function syncConversations(options) {
+		await ensurePermission(options.handle);
+		const manifest = await readManifest(options.handle);
+		const used = new Set(Object.values(manifest.conversations).map((entry) => entry.filename));
+		const result = {
+			written: 0,
+			skipped: 0,
+			failed: []
+		};
+		for (const item of options.conversations) {
+			if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+			const previous = manifest.conversations[item.id];
+			const updatedAt = item.updatedAt?.getTime() ?? null;
+			if (previous && updatedAt !== null && previous.updatedAt === updatedAt && previous.title === item.title) {
+				result.skipped++;
+				continue;
+			}
+			try {
+				const conversation = await options.fetchConversation(item.id, options.signal);
+				const filename = previous?.filename ?? uniqueFilename(createFilename(conversation.title, conversation.updatedAt), used);
+				used.add(filename);
+				await writeText(options.handle, filename, renderMarkdown(conversation, options.now));
+				manifest.conversations[item.id] = {
+					id: item.id,
+					filename,
+					title: conversation.title,
+					updatedAt: conversation.updatedAt?.getTime() ?? updatedAt
+				};
+				result.written++;
+			} catch (error) {
+				if (options.signal?.aborted) throw error;
+				result.failed.push(item.id);
+				console.warn("[CBE] Local sync failed", item.id, error instanceof Error ? error.message : "unknown error");
+			}
+		}
+		manifest.updatedAt = (options.now ?? new Date()).toISOString();
+		await writeText(options.handle, MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+		return result;
+	}
+	function syncSummary(result) {
+		return `${result.written} actualizado${result.written === 1 ? "" : "s"}, ${result.skipped} sin cambios${result.failed.length ? `, ${result.failed.length} fallido${result.failed.length === 1 ? "" : "s"}` : ""}.`;
+	}
 	function parseDateInput(value, boundary) {
 		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
 		if (!match) return null;
@@ -1376,6 +1491,8 @@
 		let field = "updated";
 		let filterOpen = false;
 		let exportSummary = null;
+		let syncController = null;
+		let syncStatus = "";
 		root = document.createElement("div");
 		root.id = "cbe-root";
 		const overlay = document.createElement("div");
@@ -1450,7 +1567,18 @@
 		exportButton.type = "button";
 		exportButton.className = "cbe-primary-button";
 		footer.append(cancel, exportButton);
-		popover.append(header, status, filterToggle, filterPanel, actions, list, empty, footer);
+		const syncActions = document.createElement("div");
+		syncActions.className = "cbe-sync-actions";
+		const chooseFolder = document.createElement("button");
+		chooseFolder.type = "button";
+		chooseFolder.className = "cbe-secondary-button";
+		chooseFolder.textContent = "Elegir carpeta ChatGPT";
+		const syncNow = document.createElement("button");
+		syncNow.type = "button";
+		syncNow.className = "cbe-secondary-button";
+		syncNow.textContent = "Sincronizar ahora";
+		syncActions.append(chooseFolder, syncNow);
+		popover.append(header, status, filterToggle, filterPanel, actions, list, empty, syncActions, footer);
 		root.append(overlay, popover);
 		document.body.append(root);
 		const range = () => ({
@@ -1479,6 +1607,9 @@
 			empty.hidden = historyState === "loading" || visible.length > 0;
 			empty.textContent = invalid ? "Corrige el rango de fechas." : conversations.length === 0 ? "No hay chats disponibles." : "No hay chats que coincidan con este filtro.";
 			if (historyState === "indexing") status.textContent = `Indexando fechas ${progress.loaded}/${progress.total ?? conversations.length}`;
+			if (syncStatus) status.textContent = syncStatus;
+			syncNow.disabled = syncController !== null;
+			chooseFolder.disabled = syncController !== null;
 			for (const conversation of visible) {
 				const row = document.createElement("label");
 				row.className = `cbe-filter-row${store.has(conversation.id) ? " is-selected" : ""}`;
@@ -1651,6 +1782,50 @@
 			store.clear();
 			refresh();
 		});
+		const syncNowWithFolder = async (handle) => {
+			syncController = new AbortController();
+			syncStatus = "Sincronizando carpeta…";
+			refresh();
+			try {
+				syncStatus = `Carpeta ChatGPT: ${syncSummary(await syncConversations({
+					handle,
+					conversations: conversations.length ? conversations : await fetchConversationHistory({ signal: syncController.signal }),
+					fetchConversation: fetchConversationForExport,
+					signal: syncController.signal,
+					now: new Date()
+				}))}`;
+			} catch (caught) {
+				if (!(caught instanceof DOMException && caught.name === "AbortError")) syncStatus = caught instanceof Error ? `No se pudo sincronizar: ${caught.message}` : "No se pudo sincronizar la carpeta.";
+			} finally {
+				syncController = null;
+				refresh();
+			}
+		};
+		chooseFolder.addEventListener("click", async () => {
+			try {
+				await syncNowWithFolder(await chooseDirectory());
+			} catch (caught) {
+				syncStatus = caught instanceof Error ? caught.message : "No se pudo elegir la carpeta.";
+				refresh();
+			}
+		});
+		syncNow.addEventListener("click", async () => {
+			try {
+				const handle = await getSavedDirectory();
+				if (!handle) {
+					syncStatus = "Primero elige una carpeta ChatGPT.";
+					refresh();
+					return;
+				}
+				await syncNowWithFolder(handle);
+			} catch (caught) {
+				syncStatus = caught instanceof Error ? caught.message : "No se pudo acceder a la carpeta.";
+				refresh();
+			}
+		});
+		getSavedDirectory().then(async (handle) => {
+			if (handle && await hasDirectoryPermission(handle)) await syncNowWithFolder(handle);
+		}).catch(() => void 0);
 		exportButton.addEventListener("click", async () => {
 			if (exportSummary) {
 				exit();
@@ -1699,7 +1874,7 @@
 		status.textContent = "Cargando historial…";
 		refresh();
 	}
-	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:fixed;inset:0;z-index:10000;pointer-events:none;box-sizing:border-box}#cbe-root *{box-sizing:border-box}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:disabled{cursor:default;opacity:.5}#cbe-root>.cbe-popover{pointer-events:auto}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-modal-overlay{position:fixed;inset:0;z-index:0;background:#0003;pointer-events:auto}.cbe-popover{position:fixed;z-index:1;top:50%;left:50%;transform:translate(-50%,-50%);width:min(390px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:hidden;display:flex;flex-direction:column;padding:16px;border:1px solid var(--border-light,#ddd);border-radius:14px;background:var(--bg-primary,#fff);box-shadow:0 10px 30px #0002}.cbe-popover-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:2px 2px 10px}.cbe-popover-header strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover-header [data-cbe-count]{white-space:nowrap;color:var(--text-secondary,#666);font-size:12px}.cbe-icon-button{width:28px;height:28px;border-radius:7px;background:transparent!important;color:var(--text-secondary,#666)!important;font-size:20px;line-height:1}.cbe-icon-button:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-index-status{font-size:11px;line-height:1.4;color:var(--text-secondary,#666);padding:0 2px 8px}.cbe-index-status.is-error{color:var(--text-error,#b42318)}.cbe-filter-toggle{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:34px;padding:7px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;text-align:left}.cbe-filter-panel{padding-top:8px}.cbe-filter-panel select,.cbe-date-field input{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--border-light,#ddd);border-radius:8px;background:var(--bg-primary,#fff);color:inherit;font-size:12px}.cbe-date-fields{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}.cbe-date-field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-secondary,#666)}.cbe-filter-error{padding-top:6px;color:var(--text-error,#b42318);font-size:11px}.cbe-selection-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}.cbe-secondary-button,.cbe-primary-button{min-height:32px;padding:6px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;font-size:12px}.cbe-primary-button{background:var(--interactive-bg-primary,#000)!important;color:var(--text-on-color,#fff)!important}.cbe-filter-list{min-height:0;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-y;margin:8px -4px 0}.cbe-filter-row{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 8px;border-radius:8px;cursor:pointer}.cbe-filter-row:hover,.cbe-filter-row.is-selected{background:var(--bg-secondary,#f7f7f8)}.cbe-filter-row>span:last-child{min-width:0;display:flex;flex-direction:column;gap:2px}.cbe-filter-row strong,.cbe-filter-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-row-check,.cbe-selection-marker{width:16px;height:16px;flex:0 0 16px;border:1px solid var(--border-medium,#999);border-radius:4px}.cbe-filter-row.is-selected .cbe-row-check,.cbe-is-selected .cbe-selection-marker{background:var(--interactive-bg-primary,#000);border-color:var(--interactive-bg-primary,#000)}.cbe-empty{padding:24px 8px;text-align:center;color:var(--text-secondary,#666);font-size:12px}.cbe-popover-footer{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px}.cbe-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.cbe-selection-marker{display:inline-block;margin-right:6px;vertical-align:middle}.cbe-is-selected{background:var(--bg-secondary,#f7f7f8)}`;
+	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:fixed;inset:0;z-index:10000;pointer-events:none;box-sizing:border-box}#cbe-root *{box-sizing:border-box}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:disabled{cursor:default;opacity:.5}#cbe-root>.cbe-popover{pointer-events:auto}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-modal-overlay{position:fixed;inset:0;z-index:0;background:#0003;pointer-events:auto}.cbe-popover{position:fixed;z-index:1;top:50%;left:50%;transform:translate(-50%,-50%);width:min(390px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:hidden;display:flex;flex-direction:column;padding:16px;border:1px solid var(--border-light,#ddd);border-radius:14px;background:var(--bg-primary,#fff);box-shadow:0 10px 30px #0002}.cbe-popover-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:2px 2px 10px}.cbe-popover-header strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover-header [data-cbe-count]{white-space:nowrap;color:var(--text-secondary,#666);font-size:12px}.cbe-icon-button{width:28px;height:28px;border-radius:7px;background:transparent!important;color:var(--text-secondary,#666)!important;font-size:20px;line-height:1}.cbe-icon-button:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-index-status{font-size:11px;line-height:1.4;color:var(--text-secondary,#666);padding:0 2px 8px}.cbe-index-status.is-error{color:var(--text-error,#b42318)}.cbe-filter-toggle{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:34px;padding:7px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;text-align:left}.cbe-filter-panel{padding-top:8px}.cbe-filter-panel select,.cbe-date-field input{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--border-light,#ddd);border-radius:8px;background:var(--bg-primary,#fff);color:inherit;font-size:12px}.cbe-date-fields{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}.cbe-date-field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-secondary,#666)}.cbe-filter-error{padding-top:6px;color:var(--text-error,#b42318);font-size:11px}.cbe-selection-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}.cbe-secondary-button,.cbe-primary-button{min-height:32px;padding:6px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;font-size:12px}.cbe-primary-button{background:var(--interactive-bg-primary,#000)!important;color:var(--text-on-color,#fff)!important}.cbe-filter-list{min-height:0;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-y;margin:8px -4px 0}.cbe-filter-row{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 8px;border-radius:8px;cursor:pointer}.cbe-filter-row:hover,.cbe-filter-row.is-selected{background:var(--bg-secondary,#f7f7f8)}.cbe-filter-row>span:last-child{min-width:0;display:flex;flex-direction:column;gap:2px}.cbe-filter-row strong,.cbe-filter-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-row-check,.cbe-selection-marker{width:16px;height:16px;flex:0 0 16px;border:1px solid var(--border-medium,#999);border-radius:4px}.cbe-filter-row.is-selected .cbe-row-check,.cbe-is-selected .cbe-selection-marker{background:var(--interactive-bg-primary,#000);border-color:var(--interactive-bg-primary,#000)}.cbe-empty{padding:24px 8px;text-align:center;color:var(--text-secondary,#666);font-size:12px}.cbe-sync-actions{display:flex;gap:8px;flex-wrap:wrap;padding:10px 0}.cbe-sync-actions button{font-size:12px}.cbe-popover-footer{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px}.cbe-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.cbe-selection-marker{display:inline-block;margin-right:6px;vertical-align:middle}.cbe-is-selected{background:var(--bg-secondary,#f7f7f8)}`;
 	function start() {
 		const style = document.createElement("style");
 		style.dataset.cbeStyles = "true";
