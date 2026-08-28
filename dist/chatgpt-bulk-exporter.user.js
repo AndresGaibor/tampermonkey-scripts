@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.1
+// @version      0.1.2
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -14,20 +14,64 @@
 
 (function() {
 	"use strict";
+	function normalizeTimestamp(value) {
+		if (value == null || value === "") return null;
+		const number = typeof value === "number" ? value : Number(value);
+		if (!Number.isFinite(number) || number <= 0) return null;
+		const milliseconds = number < 1e11 ? number * 1e3 : number;
+		const date = new Date(milliseconds);
+		return Number.isNaN(date.getTime()) ? null : date;
+	}
+	function formatDateTime(date, locale = "default") {
+		if (!date || Number.isNaN(date.getTime())) return "Unknown";
+		return new Intl.DateTimeFormat(locale, {
+			dateStyle: "short",
+			timeStyle: "medium"
+		}).format(date);
+	}
+	function compactDate(date) {
+		if (!date || Number.isNaN(date.getTime())) return "unknown";
+		const p = (n) => String(n).padStart(2, "0");
+		return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}`;
+	}
+	function readTimestamp(element, names) {
+		let current = element;
+		while (current) {
+			for (const name of names) {
+				const date = normalizeTimestamp(current.getAttribute(name) ?? current.dataset?.[name.replace(/^data-/, "").replace(/-([a-z])/g, (_, c) => c.toUpperCase())]);
+				if (date) return date;
+			}
+			current = current.parentElement;
+		}
+		return null;
+	}
 	function findConversationLinks(root = document) {
 		const seen = new Set();
 		const result = [];
 		root.querySelectorAll("a[href^=\"/c/\"]").forEach((element) => {
-			const match = element.getAttribute("href")?.match(/^\/c\/([^/?#]+)/);
+			const href = element.getAttribute("href") || "";
+			const match = href.match(/^\/c\/([^/?#]+)/);
 			if (!match) return;
 			const id = decodeURIComponent(match[1]);
-			if (!seen.has(id)) {
-				seen.add(id);
-				result.push({
-					id,
-					element
-				});
-			}
+			if (seen.has(id)) return;
+			seen.add(id);
+			const row = element.closest("[data-sidebar-item], [data-conversation-id]") || element;
+			result.push({
+				id,
+				href,
+				title: element.textContent?.trim() || "ChatGPT chat",
+				element,
+				createdAt: readTimestamp(row, [
+					"data-create-time",
+					"data-created-at",
+					"data-created"
+				]),
+				updatedAt: readTimestamp(row, [
+					"data-update-time",
+					"data-updated-at",
+					"data-updated"
+				])
+			});
 		});
 		return result;
 	}
@@ -78,26 +122,6 @@
 			this.selected.clear();
 		}
 	};
-	function normalizeTimestamp(value) {
-		if (value == null || value === "") return null;
-		const number = typeof value === "number" ? value : Number(value);
-		if (!Number.isFinite(number) || number <= 0) return null;
-		const milliseconds = number < 1e11 ? number * 1e3 : number;
-		const date = new Date(milliseconds);
-		return Number.isNaN(date.getTime()) ? null : date;
-	}
-	function formatDateTime(date, locale = "default") {
-		if (!date || Number.isNaN(date.getTime())) return "Unknown";
-		return new Intl.DateTimeFormat(locale, {
-			dateStyle: "short",
-			timeStyle: "medium"
-		}).format(date);
-	}
-	function compactDate(date) {
-		if (!date || Number.isNaN(date.getTime())) return "unknown";
-		const p = (n) => String(n).padStart(2, "0");
-		return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}`;
-	}
 	function roleOf(value) {
 		const role = typeof value === "string" ? value : "";
 		return [
@@ -924,6 +948,23 @@
 		anchor.click();
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
+	function parseDateTimeInput(value) {
+		if (!value) return null;
+		const time = new Date(value).getTime();
+		return Number.isFinite(time) ? time : null;
+	}
+	function isInDateRange(conversation, field, range) {
+		const date = field === "created" ? conversation.createdAt : conversation.updatedAt;
+		if (!date) return range.from === null && range.to === null;
+		const time = date.getTime();
+		return (range.from === null || time >= range.from) && (range.to === null || time <= range.to);
+	}
+	function filterConversations(conversations, field, range) {
+		return conversations.filter((conversation) => isInDateRange(conversation, field, range));
+	}
+	function hasInvertedRange(range) {
+		return range.from !== null && range.to !== null && range.from > range.to;
+	}
 	function mountSelectionTrigger(target, onClick) {
 		const existing = target.ownerDocument.querySelector("[data-cbe-selection-trigger=\"true\"]");
 		if (existing?.isConnected) return existing;
@@ -937,6 +978,16 @@
 		target.prepend(button);
 		return button;
 	}
+	function dateInput(document, label, key) {
+		const wrapper = document.createElement("label");
+		wrapper.className = "cbe-date-field";
+		wrapper.textContent = label;
+		const input = document.createElement("input");
+		input.type = "datetime-local";
+		input.dataset.cbeDate = key;
+		wrapper.append(input);
+		return wrapper;
+	}
 	function mountSidebar() {
 		const target = findSidebarMountTarget();
 		if (!target) return;
@@ -945,6 +996,7 @@
 		const store = new SelectionStore();
 		let selecting = false;
 		let controller = null;
+		let field = "updated";
 		root = document.createElement("div");
 		root.id = "cbe-root";
 		const actions = document.createElement("div");
@@ -959,22 +1011,92 @@
 		exportButton.type = "button";
 		exportButton.textContent = "Exportar";
 		exportButton.disabled = true;
-		actions.append(count, cancel, exportButton);
-		root.append(actions);
+		const filterButton = document.createElement("button");
+		filterButton.type = "button";
+		filterButton.textContent = "Filtrar por fecha";
+		filterButton.dataset.cbeFilterToggle = "true";
+		const popover = document.createElement("section");
+		popover.className = "cbe-popover";
+		popover.hidden = true;
+		popover.dataset.cbePopover = "true";
+		popover.setAttribute("aria-label", "Filtrar chats por fecha");
+		const select = document.createElement("select");
+		select.dataset.cbeDateField = "true";
+		select.innerHTML = "<option value=\"updated\">Última actualización</option><option value=\"created\">Fecha de creación</option>";
+		const fields = document.createElement("div");
+		fields.className = "cbe-date-fields";
+		fields.append(dateInput(document, "Desde", "from"), dateInput(document, "Hasta", "to"));
+		const error = document.createElement("div");
+		error.className = "cbe-filter-error";
+		error.hidden = true;
+		const list = document.createElement("div");
+		list.className = "cbe-filter-list";
+		list.setAttribute("role", "list");
+		const selectAll = document.createElement("button");
+		selectAll.type = "button";
+		selectAll.textContent = "Seleccionar todos";
+		const clear = document.createElement("button");
+		clear.type = "button";
+		clear.textContent = "Limpiar";
+		const filterActions = document.createElement("div");
+		filterActions.className = "cbe-filter-actions";
+		filterActions.append(selectAll, clear);
+		popover.append(select, fields, error, filterActions, list);
+		actions.append(count, filterButton, cancel, exportButton);
+		root.append(actions, popover);
 		target.prepend(root);
+		const range = () => ({
+			from: parseDateTimeInput(fields.querySelector("[data-cbe-date=\"from\"]")?.value || ""),
+			to: parseDateTimeInput(fields.querySelector("[data-cbe-date=\"to\"]")?.value || "")
+		});
 		const refresh = () => {
+			const conversations = findConversationLinks();
+			const current = range();
+			const invalid = hasInvertedRange(current);
+			error.hidden = !invalid;
+			error.textContent = invalid ? "La fecha Desde debe ser anterior o igual a Hasta." : "";
+			const visible = invalid ? [] : filterConversations(conversations, field, current);
 			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
 			exportButton.disabled = store.size === 0 || controller !== null;
-			for (const link of findConversationLinks()) if (selecting) decorateConversation(link.element, store.has(link.id), (checked) => {
+			selectAll.disabled = visible.length === 0 || invalid;
+			list.replaceChildren();
+			if (!visible.length) {
+				const empty = document.createElement("div");
+				empty.className = "cbe-empty";
+				empty.textContent = invalid ? "Corrige el rango de fechas." : "No hay chats que coincidan.";
+				list.append(empty);
+			}
+			for (const conversation of visible) {
+				const row = document.createElement("label");
+				row.className = "cbe-filter-row";
+				const input = document.createElement("input");
+				input.type = "checkbox";
+				input.checked = store.has(conversation.id);
+				input.addEventListener("change", () => {
+					input.checked ? store.add(conversation.id) : store.remove(conversation.id);
+					refresh();
+				});
+				const text = document.createElement("span");
+				const title = document.createElement("strong");
+				title.textContent = conversation.title;
+				const date = document.createElement("small");
+				date.textContent = formatDateTime(field === "created" ? conversation.createdAt : conversation.updatedAt);
+				text.append(title, date);
+				row.append(input, text);
+				list.append(row);
+			}
+			if (selecting) for (const link of conversations) decorateConversation(link.element, store.has(link.id), (checked) => {
 				checked ? store.add(link.id) : store.remove(link.id);
 				refresh();
 			});
 		};
 		const exit = (message) => {
+			if (controller) controller.abort();
 			controller = null;
 			selecting = false;
 			store.clear();
 			actions.hidden = true;
+			popover.hidden = true;
 			for (const link of findConversationLinks()) link.element.querySelector("[data-cbe-checkbox]")?.remove();
 			if (message) trigger.textContent = message;
 			refresh();
@@ -985,10 +1107,25 @@
 			actions.hidden = false;
 			refresh();
 		});
-		cancel.addEventListener("click", () => {
-			if (controller) controller.abort();
-			else exit();
+		filterButton.addEventListener("click", () => {
+			popover.hidden = !popover.hidden;
+			filterButton.setAttribute("aria-expanded", String(!popover.hidden));
+			refresh();
 		});
+		select.addEventListener("change", () => {
+			field = select.value;
+			refresh();
+		});
+		fields.addEventListener("input", refresh);
+		selectAll.addEventListener("click", () => {
+			for (const conversation of filterConversations(findConversationLinks(), field, range())) store.add(conversation.id);
+			refresh();
+		});
+		clear.addEventListener("click", () => {
+			store.clear();
+			refresh();
+		});
+		cancel.addEventListener("click", () => exit());
 		exportButton.addEventListener("click", async () => {
 			controller = new AbortController();
 			exportButton.disabled = true;
@@ -1010,7 +1147,7 @@
 		});
 		refresh();
 	}
-	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px}#cbe-root button{font:inherit;border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-item:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:-2px}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-menu-item[hidden]{display:none!important}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions button{border-radius:6px;padding:6px 9px;background:var(--interactive-bg-secondary-default,transparent)}#cbe-actions button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}`;
+	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:relative}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-menu-item[hidden]{display:none!important}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions button{border-radius:6px;padding:6px 9px;background:var(--interactive-bg-secondary-default,transparent)}#cbe-actions button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-actions button:disabled{opacity:.45;cursor:not-allowed}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}.cbe-popover{position:absolute;z-index:20;top:48px;left:8px;right:8px;padding:12px;border:1px solid var(--border-light,#ddd);border-radius:12px;background:var(--bg-primary,#fff);box-shadow:0 8px 24px #0002}.cbe-popover select{width:100%;padding:7px 8px;border:1px solid var(--border-light,#ccc);border-radius:7px;background:var(--bg-primary,#fff);color:inherit}.cbe-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.cbe-date-field{display:grid;gap:4px;color:var(--text-secondary,#666);font-size:11px}.cbe-date-field input{width:100%;box-sizing:border-box;padding:6px 4px;border:1px solid var(--border-light,#ccc);border-radius:6px;background:var(--bg-primary,#fff);color:inherit;font-size:11px}.cbe-filter-error{color:var(--text-error,#b42318);font-size:11px;margin-bottom:8px}.cbe-filter-actions{display:flex;gap:6px;margin-bottom:8px}.cbe-filter-actions button{padding:5px 7px;border-radius:6px;background:var(--interactive-bg-secondary-default,#eee)}.cbe-filter-actions button:disabled{opacity:.45;cursor:not-allowed}.cbe-filter-list{max-height:260px;overflow:auto}.cbe-filter-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-radius:7px;cursor:pointer}.cbe-filter-row:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)}.cbe-filter-row input{accent-color:var(--interactive-bg-secondary-selected,#555)}.cbe-filter-row span{min-width:0;display:grid}.cbe-filter-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-empty{padding:12px 4px;color:var(--text-secondary,#666);text-align:center}`;
 	function start() {
 		const style = document.createElement("style");
 		style.dataset.cbeStyles = "true";

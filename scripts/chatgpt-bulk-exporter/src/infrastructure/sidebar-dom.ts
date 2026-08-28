@@ -1,10 +1,31 @@
-export interface ConversationLink { id: string; element: HTMLAnchorElement; }
+import { normalizeTimestamp } from '../domain/dates.ts';
+import type { SidebarConversation } from '../domain/conversation-filter.ts';
+
+export interface ConversationLink extends SidebarConversation { element: HTMLAnchorElement; }
+
+function readTimestamp(element: Element, names: string[]): Date | null {
+  let current: Element | null = element;
+  while (current) {
+    for (const name of names) {
+      const value = current.getAttribute(name) ?? (current as HTMLElement).dataset?.[name.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())];
+      const date = normalizeTimestamp(value);
+      if (date) return date;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
 
 export function findConversationLinks(root: ParentNode = document): ConversationLink[] {
   const seen = new Set<string>(); const result: ConversationLink[] = [];
   root.querySelectorAll<HTMLAnchorElement>('a[href^="/c/"]').forEach(element => {
-    const match = element.getAttribute('href')?.match(/^\/c\/([^/?#]+)/); if (!match) return;
-    const id = decodeURIComponent(match[1]); if (!seen.has(id)) { seen.add(id); result.push({ id, element }); }
+    const href = element.getAttribute('href') || ''; const match = href.match(/^\/c\/([^/?#]+)/); if (!match) return;
+    const id = decodeURIComponent(match[1]); if (seen.has(id)) return;
+    seen.add(id);
+    const row = element.closest<HTMLElement>('[data-sidebar-item], [data-conversation-id]') || element;
+    result.push({ id, href, title: element.textContent?.trim() || 'ChatGPT chat', element,
+      createdAt: readTimestamp(row, ['data-create-time', 'data-created-at', 'data-created']),
+      updatedAt: readTimestamp(row, ['data-update-time', 'data-updated-at', 'data-updated']) });
   });
   return result;
 }

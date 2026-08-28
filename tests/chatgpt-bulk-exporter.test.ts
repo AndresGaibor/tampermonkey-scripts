@@ -9,6 +9,7 @@ import { findConversationLinks, decorateConversation, findSidebarMountTarget } f
 import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
+import { filterConversations, hasInvertedRange, parseDateTimeInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
 
 const raw = (current_node = 'a') => ({
   conversation_id: 'c1', title: 'Demo', create_time: 1724672589, update_time: 1724672706,
@@ -55,6 +56,27 @@ describe('ChatGPT Bulk Exporter domain', () => {
   });
 });
 
+describe('filtro de chats por fecha y hora', () => {
+  const at = (value: string) => new Date(value);
+  const chats: SidebarConversation[] = [
+    { id: 'old', title: 'Old', href: '/c/old', createdAt: at('2024-01-01T10:00:00Z'), updatedAt: at('2024-01-02T10:00:00Z') },
+    { id: 'new', title: 'New', href: '/c/new', createdAt: at('2024-02-01T10:00:00Z'), updatedAt: at('2024-03-01T10:00:00Z') },
+    { id: 'unknown', title: 'Unknown', href: '/c/unknown', createdAt: null, updatedAt: null },
+  ];
+  test('filtra por creación/actualización con límites inclusivos y fechas desconocidas', () => {
+    const range = { from: at('2024-01-01T10:00:00Z').getTime(), to: at('2024-02-01T10:00:00Z').getTime() };
+    expect(filterConversations(chats, 'created', range).map(chat => chat.id)).toEqual(['old', 'new']);
+    expect(filterConversations(chats, 'updated', range).map(chat => chat.id)).toEqual(['old']);
+    expect(filterConversations(chats, 'created', { from: null, to: null }).map(chat => chat.id)).toEqual(['old', 'new', 'unknown']);
+  });
+  test('detecta rangos invertidos y convierte datetime-local', () => {
+    expect(hasInvertedRange({ from: 20, to: 10 })).toBe(true);
+    expect(hasInvertedRange({ from: 10, to: 20 })).toBe(false);
+    expect(parseDateTimeInput('')).toBeNull();
+    expect(parseDateTimeInput('2024-01-01T10:00')).toBe(new Date('2024-01-01T10:00').getTime());
+  });
+});
+
 describe('selection and sidebar', () => {
   test.each([
     ['completo', '<div id="stage-slideover-sidebar"><nav aria-label="Historial del chat"><div id="history"><a data-sidebar-item="true" href="/c/one">One</a></div></nav></div>'],
@@ -75,6 +97,12 @@ describe('selection and sidebar', () => {
   test('selecciona, deselecciona, deduplica y limpia', () => {
     const store = new SelectionStore(); store.toggle('a'); store.toggle('a'); store.toggle('a'); store.toggle('a');
     expect(store.size).toBe(0); store.add('a'); store.add('a'); store.add('b'); expect(store.ids).toEqual(['a', 'b']); store.clear(); expect(store.size).toBe(0);
+  });
+  test('encuentra metadatos de fecha del elemento del chat', () => {
+    const dom = new JSDOM('<aside><div data-sidebar-item="true" data-create-time="1724672589" data-update-time="1724672706"><a href="/c/one">One</a></div></aside>');
+    const conversation = findConversationLinks(dom.window.document.querySelector('aside')!)[0];
+    expect(conversation.createdAt?.getTime()).toBe(1724672589000);
+    expect(conversation.updatedAt?.getTime()).toBe(1724672706000);
   });
   test('encuentra solo links de conversación y decora idempotentemente', () => {
     const dom = new JSDOM('<aside><a href="/c/one">One</a><a href="/settings">Settings</a><a href="/c/one">Duplicate</a></aside>');
