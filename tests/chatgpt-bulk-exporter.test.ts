@@ -174,6 +174,19 @@ describe('historial paginado', () => {
       expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: 3 }]);
     } finally { globalThis.fetch = originalFetch; }
   });
+  test('continúa después de una página corta cuando aún hay más historial', async () => {
+    const calls: string[] = []; const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url);
+      if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: 'Uno' }, { id: 'chat-2', title: 'Dos' }], total: 3 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ id: 'chat-3', title: 'Tres' }], total: 3 }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const result = await fetchConversationHistory({ pageSize: 28 });
+      expect(calls).toHaveLength(2); expect(calls[1]).toContain('offset=2');
+      expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']);
+    } finally { globalThis.fetch = originalFetch; }
+  });
   test('usa create_time como fallback y omite entradas sin ID', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
