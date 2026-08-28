@@ -25,6 +25,22 @@ export function filterConversations(conversations: SidebarConversation[], field:
   return conversations.filter(conversation => isInDateRange(conversation, field, range));
 }
 
+function dateTime(conversation: SidebarConversation, field: DateField): number | null {
+  const value = field === 'created' ? conversation.createdAt : conversation.updatedAt;
+  const time = value?.getTime();
+  return typeof time === 'number' && Number.isFinite(time) ? time : null;
+}
+
+export function filterAndSortConversations(conversations: SidebarConversation[], field: DateField, range: DateRange): SidebarConversation[] {
+  return filterConversations(conversations, field, range).sort((left, right) => {
+    const leftTime = dateTime(left, field); const rightTime = dateTime(right, field);
+    if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+    if (leftTime === null && rightTime !== null) return 1;
+    if (leftTime !== null && rightTime === null) return -1;
+    const titleOrder = left.title.localeCompare(right.title); return titleOrder || left.id.localeCompare(right.id);
+  });
+}
+
 export function hasInvertedRange(range: DateRange): boolean {
   return range.from !== null && range.to !== null && range.from > range.to;
 }

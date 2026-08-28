@@ -10,10 +10,11 @@ import { findConversationLinks, decorateConversation, findSidebarMountTarget } f
 import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
-import { filterConversations, hasInvertedRange, parseDateInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
+import { filterAndSortConversations, filterConversations, hasInvertedRange, parseDateInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
 import { CACHE_KEY, CACHE_MAX_ENTRIES, CACHE_TTL_MS, ConversationDateCache, type CachedConversationDate } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/conversation-date-cache.ts';
 import { indexConversationDates } from '../scripts/chatgpt-bulk-exporter/src/application/progressive-date-indexer.ts';
 import { conversationToSidebarMetadata } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
+import { styles } from '../scripts/chatgpt-bulk-exporter/src/presentation/styles.ts';
 
 const raw = (current_node = 'a') => ({
   conversation_id: 'c1', title: 'Demo', create_time: 1724672589, update_time: 1724672706,
@@ -81,6 +82,22 @@ describe('filtro de chats por fecha y hora', () => {
     expect(filterConversations(chats, 'created', range).map(chat => chat.id)).toEqual(['old', 'new']);
     expect(filterConversations(chats, 'updated', range).map(chat => chat.id)).toEqual(['old']);
     expect(filterConversations(chats, 'created', { from: null, to: null }).map(chat => chat.id)).toEqual(['old', 'new', 'unknown']);
+  });
+  test('ordena por el campo activo, deja fechas desconocidas al final y no muta la fuente', () => {
+    const tied: SidebarConversation[] = [
+      { id: 'z', title: 'Beta', href: '/c/z', createdAt: at('2024-04-01T10:00:00Z'), updatedAt: at('2024-02-01T10:00:00Z') },
+      { id: 'a', title: 'Alpha', href: '/c/a', createdAt: at('2024-03-01T10:00:00Z'), updatedAt: at('2024-02-01T10:00:00Z') },
+      { id: 'b', title: 'Alpha', href: '/c/b', createdAt: null, updatedAt: null },
+      { id: 'a2', title: 'Alpha', href: '/c/a2', createdAt: null, updatedAt: null },
+      { id: 'invalid', title: 'Invalid', href: '/c/invalid', createdAt: new Date(Number.NaN), updatedAt: new Date(Number.NaN) },
+    ];
+    const original = tied.map(chat => chat.id);
+    expect(filterAndSortConversations(tied, 'created', { from: null, to: null }).map(chat => chat.id)).toEqual(['z', 'a', 'a2', 'b', 'invalid']);
+    expect(filterAndSortConversations(tied, 'updated', { from: null, to: null }).map(chat => chat.id)).toEqual(['a', 'z', 'a2', 'b', 'invalid']);
+    expect(tied.map(chat => chat.id)).toEqual(original);
+  });
+  test('mantiene solo la lista como región flexible de scroll nativo', () => {
+    expect(styles).toContain('.cbe-filter-list{min-height:0;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-y');
   });
   test('detecta rangos invertidos y convierte días completos en hora local', () => {
     expect(hasInvertedRange({ from: 20, to: 10 })).toBe(true);
