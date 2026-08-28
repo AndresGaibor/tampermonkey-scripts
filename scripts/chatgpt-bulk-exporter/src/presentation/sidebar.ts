@@ -1,9 +1,7 @@
 import { findConversationLinks, decorateConversation, findSidebarMountTarget } from '../infrastructure/sidebar-dom.ts';
 import { SelectionStore } from '../application/selection.ts';
 import { exportBatch } from '../application/exporter.ts';
-import { fetchConversation, fetchConversationForExport, fetchConversationHistory } from '../infrastructure/chatgpt-api.ts';
-import { indexConversationDates } from '../application/progressive-date-indexer.ts';
-import { tampermonkeyDateCache } from '../infrastructure/conversation-date-cache.ts';
+import { fetchConversationForExport, fetchConversationHistory, ChatGptApiError } from '../infrastructure/chatgpt-api.ts';
 import { buildZip, downloadBytes } from '../infrastructure/download.ts';
 import { chooseDirectory, getSavedDirectory, hasDirectoryPermission, syncConversations, syncSummary } from '../infrastructure/folder-sync.ts';
 import { filterAndSortConversations, hasInvertedRange, parseDateInput, type DateField, type DateRange, type SidebarConversation } from '../domain/conversation-filter.ts';
@@ -55,21 +53,20 @@ export function mountSidebar(): void {
     for (const conversation of visible) { const row = document.createElement('label'); row.className = `cbe-filter-row${store.has(conversation.id) ? ' is-selected' : ''}`; const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'cbe-visually-hidden'; input.checked = store.has(conversation.id); input.setAttribute('aria-label', `Seleccionar ${conversation.title}`); input.addEventListener('change', () => { input.checked ? store.add(conversation.id) : store.remove(conversation.id); refresh(); }); const mark = document.createElement('span'); mark.className = 'cbe-row-check'; mark.setAttribute('aria-hidden', 'true'); const text = document.createElement('span'); const title = document.createElement('strong'); title.textContent = conversation.title; const date = document.createElement('small'); const dateValue = field === 'created' ? conversation.createdAt : conversation.updatedAt; date.textContent = `${field === 'created' ? 'Creado' : 'Actualizado'}: ${formatDateTime(dateValue)}`; text.append(title, date); row.append(input, mark, text); list.append(row); }
     for (const link of visibleLinks()) decorateConversation(link.element, store.has(link.id), checked => { checked ? store.add(link.id) : store.remove(link.id); refresh(); });
   };
-  const startProgressiveIndex = (activeController: AbortController) => {
-    historyState = conversations.length ? 'indexing' : 'error'; progress = { loaded: 0, total: conversations.length }; status.textContent = conversations.length ? `Indexando fechas 0/${conversations.length}` : 'No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.'; refresh();
-    if (!conversations.length) return;
-    void indexConversationDates({ conversations, cache: tampermonkeyDateCache, fetchConversation, signal: activeController.signal, onUpdate: updated => { if (indexController !== activeController) return; conversations = conversations.map(chat => chat.id === updated.id ? updated : chat); refresh(); }, onProgress: value => { if (indexController !== activeController) return; progress = value; refresh(); } }).then(() => { if (indexController === activeController && !activeController.signal.aborted) { historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh(); } }).catch(caught => { if (!(caught instanceof DOMException && caught.name === 'AbortError') && indexController === activeController) { historyState = 'error'; status.textContent = 'No se pudieron indexar todas las fechas; los resultados disponibles siguen utilizables.'; refresh(); } });
-  };
   const loadHistory = async () => {
     indexController?.abort(); const activeController = new AbortController(); indexController = activeController; historyState = 'loading'; conversations = []; progress = { loaded: 0, total: null }; status.textContent = 'Cargando historial…'; refresh();
     try {
       conversations = await fetchConversationHistory({ signal: activeController.signal, onUpdate: loaded => { if (indexController !== activeController) return; conversations = loaded; refresh(); }, onProgress: value => { if (indexController !== activeController) return; progress = value; status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`; refresh(); } });
       if (indexController !== activeController) return;
-      const hasIncompleteDates = conversations.some(chat => !chat.createdAt || !chat.updatedAt);
-      if (!conversations.length || hasIncompleteDates) { if (!conversations.length) conversations = visibleLinks(); startProgressiveIndex(activeController); } else { historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh(); indexController = null; }
+      if (!conversations.length) conversations = visibleLinks();
+      historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh(); indexController = null;
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return; if (indexController !== activeController) return;
-      conversations = visibleLinks(); startProgressiveIndex(activeController);
+      historyState = conversations.length ? 'ready' : 'error';
+      status.textContent = caught instanceof ChatGptApiError && caught.status === 429
+        ? `ChatGPT limitó las solicitudes. Se cargaron ${conversations.length} chats; espera 5 minutos antes de reintentar.`
+        : conversations.length ? `${conversations.length} chats cargados; no se pudo completar el historial.` : 'No se pudo cargar el historial. Inténtalo más tarde.';
+      refresh(); indexController = null;
     }
   };
   const exit = () => { controller?.abort(); indexController?.abort(); controller = null; indexController = null; exportSummary = null; selecting = false; store.clear(); popover.hidden = true; overlay.hidden = true; filterOpen = false; filterPanel.hidden = true; filterToggle.setAttribute('aria-expanded', 'false'); for (const link of visibleLinks()) { link.element.querySelector('[data-cbe-checkbox]')?.remove(); link.element.querySelector('[data-cbe-selection-marker]')?.remove(); link.element.classList.remove('cbe-is-selected'); } conversations = []; historyState = 'idle'; trigger.hidden = false; refresh(); };
@@ -90,7 +87,9 @@ export function mountSidebar(): void {
       if (result.cancelled) { exit(); return; }
       if (result.files.length) { const stamp = new Date(); const pad = (n: number) => String(n).padStart(2, '0'); downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth()+1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`); }
       controller = null; exportSummary = { exported: result.files.length, failed: result.failures.length }; refresh();
-      status.textContent = formatExportSummary(result.files.length, result.failures.length);
+      status.textContent = result.rateLimited
+        ? `${formatExportSummary(result.files.length, result.failures.length)} ChatGPT limitó las solicitudes; espera 5 minutos antes de continuar.`
+        : formatExportSummary(result.files.length, result.failures.length);
     } catch (caught) {
       controller = null; exportSummary = { exported: 0, failed: store.size }; refresh(); status.textContent = caught instanceof Error ? `No se pudo completar la exportación: ${caught.message}` : 'No se pudo completar la exportación.';
     }

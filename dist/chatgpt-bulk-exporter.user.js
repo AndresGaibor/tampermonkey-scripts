@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.23
+// @version      0.1.24
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -268,18 +268,35 @@
 		while (used.has(`${base}-${n}${ext}`)) n++;
 		return `${base}-${n}${ext}`;
 	}
+	function waitFor$1(ms, signal) {
+		if (!ms) return Promise.resolve();
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(resolve, ms);
+			signal?.addEventListener("abort", () => {
+				clearTimeout(timer);
+				reject(new DOMException("Aborted", "AbortError"));
+			}, { once: true });
+		});
+	}
+	function isRateLimited(error) {
+		return typeof error === "object" && error !== null && "status" in error && error.status === 429;
+	}
 	async function exportBatch(options) {
 		const files = [];
 		const failures = [];
 		const used = new Set();
 		const ids = options.conversationIds;
+		const delayMs = options.delayMs ?? 3e3;
+		const wait = options.wait ?? waitFor$1;
 		for (let index = 0; index < ids.length; index++) {
 			const id = ids[index];
 			if (options.signal?.aborted) return {
 				files,
 				failures,
-				cancelled: true
+				cancelled: true,
+				rateLimited: false
 			};
+			if (index > 0) await wait(delayMs, options.signal);
 			options.onProgress?.({
 				index: index + 1,
 				total: ids.length,
@@ -312,7 +329,14 @@
 				if (options.signal?.aborted) return {
 					files,
 					failures,
-					cancelled: true
+					cancelled: true,
+					rateLimited: false
+				};
+				if (isRateLimited(error)) return {
+					files,
+					failures,
+					cancelled: false,
+					rateLimited: true
 				};
 				console.warn("[CBE] Conversation export failed", id, error instanceof Error ? error.message : "unknown error");
 				failures.push(id);
@@ -327,7 +351,8 @@
 		return {
 			files,
 			failures,
-			cancelled: false
+			cancelled: false,
+			rateLimited: false
 		};
 	}
 	function conversationIdFromPath(pathname) {
@@ -372,15 +397,6 @@
 			updatedAt: null,
 			currentNode: messages.at(-1)?.id ?? null,
 			messages
-		};
-	}
-	function conversationToSidebarMetadata(conversation, href = `/c/${encodeURIComponent(conversation.id)}`) {
-		return {
-			id: conversation.id,
-			title: conversation.title,
-			href,
-			createdAt: conversation.createdAt,
-			updatedAt: conversation.updatedAt
 		};
 	}
 	var ConversationFormatError = class extends Error {
@@ -454,6 +470,16 @@
 			throw error;
 		}
 	}
+	function waitFor(ms, signal) {
+		if (!ms) return Promise.resolve();
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(resolve, ms);
+			signal?.addEventListener("abort", () => {
+				clearTimeout(timer);
+				reject(new DOMException("Aborted", "AbortError"));
+			}, { once: true });
+		});
+	}
 	function readHistoryPayload(payload) {
 		if (Array.isArray(payload)) return {
 			items: payload,
@@ -504,12 +530,13 @@
 		};
 	}
 	async function fetchConversationHistory(options = {}) {
-		const { signal, pageSize = 28, onProgress, onUpdate } = options;
+		const { signal, pageSize = 28, pageDelayMs = 2e3, wait = waitFor, onProgress, onUpdate } = options;
 		const conversations = [];
 		const seen = new Set();
 		let offset = 0;
 		let total = null;
 		while (true) {
+			if (offset > 0) await wait(pageDelayMs, signal);
 			const response = await authenticatedFetch(`/backend-api/conversations?${new URLSearchParams({
 				offset: String(offset),
 				limit: String(pageSize),
@@ -538,94 +565,6 @@
 			offset += items.length;
 		}
 		return conversations;
-	}
-	var CACHE_KEY = "cbe:conversation-date-cache:v1";
-	var CACHE_TTL_MS = 1440 * 60 * 1e3;
-	function validEntry(value) {
-		if (!value || typeof value !== "object") return false;
-		const entry = value;
-		const validDate = (date) => date === null || typeof date === "number" && Number.isFinite(date);
-		return typeof entry.id === "string" && entry.id.trim() !== "" && typeof entry.title === "string" && validDate(entry.createdAt) && validDate(entry.updatedAt) && typeof entry.validatedAt === "number" && Number.isFinite(entry.validatedAt);
-	}
-	var ConversationDateCache = class {
-		storage;
-		constructor(storage) {
-			this.storage = storage;
-		}
-		load(now = Date.now()) {
-			const raw = this.storage.get(CACHE_KEY);
-			if (!Array.isArray(raw)) return [];
-			return raw.filter(validEntry).filter((entry) => now - entry.validatedAt < CACHE_TTL_MS).sort((a, b) => b.validatedAt - a.validatedAt).slice(0, 500);
-		}
-		save(entries, now = Date.now()) {
-			const deduped = new Map();
-			for (const entry of entries) if (validEntry(entry)) deduped.set(entry.id, {
-				...entry,
-				validatedAt: Number.isFinite(entry.validatedAt) ? entry.validatedAt : now
-			});
-			this.storage.set(CACHE_KEY, [...deduped.values()].sort((a, b) => b.validatedAt - a.validatedAt).slice(0, 500));
-		}
-	};
-	var tampermonkeyDateCache = new ConversationDateCache({
-		get: (key) => typeof GM_getValue === "function" ? GM_getValue(key, []) : [],
-		set: (key, value) => {
-			if (typeof GM_setValue === "function") GM_setValue(key, value);
-		}
-	});
-	function cachedToSidebarConversation(entry, fallback) {
-		return {
-			...fallback,
-			title: entry.title || fallback.title,
-			createdAt: entry.createdAt === null ? fallback.createdAt : new Date(entry.createdAt),
-			updatedAt: entry.updatedAt === null ? fallback.updatedAt : new Date(entry.updatedAt)
-		};
-	}
-	async function indexConversationDates(options) {
-		const { conversations, cache, fetchConversation, signal, onUpdate, onProgress } = options;
-		const now = options.now ?? Date.now();
-		const entries = cache.load(now);
-		const byId = new Map(entries.map((entry) => [entry.id, entry]));
-		const stale = [];
-		for (const conversation of conversations) {
-			const cached = byId.get(conversation.id);
-			if (cached) onUpdate?.(cachedToSidebarConversation(cached, conversation));
-			const missingDate = !conversation.createdAt || !conversation.updatedAt;
-			const incompleteCache = !cached?.createdAt || !cached?.updatedAt;
-			if (!cached || now - cached.validatedAt >= 864e5 || missingDate || incompleteCache) stale.push(conversation);
-		}
-		let loaded = 0;
-		const report = () => onProgress?.({
-			loaded: ++loaded,
-			total: stale.length
-		});
-		let cursor = 0;
-		const worker = async () => {
-			while (true) {
-				if (signal?.aborted) return;
-				const conversation = stale[cursor++];
-				if (!conversation) return;
-				try {
-					const result = await fetchConversation(conversation.id, signal);
-					if (signal?.aborted) return;
-					const metadata = conversationToSidebarMetadata(result, conversation.href);
-					byId.set(conversation.id, {
-						id: metadata.id,
-						title: metadata.title,
-						createdAt: metadata.createdAt?.getTime() ?? null,
-						updatedAt: metadata.updatedAt?.getTime() ?? null,
-						validatedAt: now
-					});
-					onUpdate?.(metadata);
-				} catch (error) {
-					if (error instanceof DOMException && error.name === "AbortError") return;
-				} finally {
-					report();
-				}
-			}
-		};
-		const count = Math.min(Math.max(options.concurrency ?? 3, 1), Math.max(stale.length, 1));
-		await Promise.all(Array.from({ length: count }, worker));
-		if (!signal?.aborted) cache.save([...byId.values()], now);
 	}
 	var u8 = Uint8Array, u16 = Uint16Array, i32 = Int32Array;
 	var fleb = new u8([
@@ -1641,44 +1580,6 @@
 				refresh();
 			});
 		};
-		const startProgressiveIndex = (activeController) => {
-			historyState = conversations.length ? "indexing" : "error";
-			progress = {
-				loaded: 0,
-				total: conversations.length
-			};
-			status.textContent = conversations.length ? `Indexando fechas 0/${conversations.length}` : "No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.";
-			refresh();
-			if (!conversations.length) return;
-			indexConversationDates({
-				conversations,
-				cache: tampermonkeyDateCache,
-				fetchConversation,
-				signal: activeController.signal,
-				onUpdate: (updated) => {
-					if (indexController !== activeController) return;
-					conversations = conversations.map((chat) => chat.id === updated.id ? updated : chat);
-					refresh();
-				},
-				onProgress: (value) => {
-					if (indexController !== activeController) return;
-					progress = value;
-					refresh();
-				}
-			}).then(() => {
-				if (indexController === activeController && !activeController.signal.aborted) {
-					historyState = "ready";
-					status.textContent = `${conversations.length} chats disponibles`;
-					refresh();
-				}
-			}).catch((caught) => {
-				if (!(caught instanceof DOMException && caught.name === "AbortError") && indexController === activeController) {
-					historyState = "error";
-					status.textContent = "No se pudieron indexar todas las fechas; los resultados disponibles siguen utilizables.";
-					refresh();
-				}
-			});
-		};
 		const loadHistory = async () => {
 			indexController?.abort();
 			const activeController = new AbortController();
@@ -1707,21 +1608,18 @@
 					}
 				});
 				if (indexController !== activeController) return;
-				const hasIncompleteDates = conversations.some((chat) => !chat.createdAt || !chat.updatedAt);
-				if (!conversations.length || hasIncompleteDates) {
-					if (!conversations.length) conversations = visibleLinks();
-					startProgressiveIndex(activeController);
-				} else {
-					historyState = "ready";
-					status.textContent = `${conversations.length} chats disponibles`;
-					refresh();
-					indexController = null;
-				}
+				if (!conversations.length) conversations = visibleLinks();
+				historyState = "ready";
+				status.textContent = `${conversations.length} chats disponibles`;
+				refresh();
+				indexController = null;
 			} catch (caught) {
 				if (caught instanceof DOMException && caught.name === "AbortError") return;
 				if (indexController !== activeController) return;
-				conversations = visibleLinks();
-				startProgressiveIndex(activeController);
+				historyState = conversations.length ? "ready" : "error";
+				status.textContent = caught instanceof ChatGptApiError && caught.status === 429 ? `ChatGPT limitó las solicitudes. Se cargaron ${conversations.length} chats; espera 5 minutos antes de reintentar.` : conversations.length ? `${conversations.length} chats cargados; no se pudo completar el historial.` : "No se pudo cargar el historial. Inténtalo más tarde.";
+				refresh();
+				indexController = null;
 			}
 		};
 		const exit = () => {
@@ -1861,7 +1759,7 @@
 					failed: result.failures.length
 				};
 				refresh();
-				status.textContent = formatExportSummary(result.files.length, result.failures.length);
+				status.textContent = result.rateLimited ? `${formatExportSummary(result.files.length, result.failures.length)} ChatGPT limitó las solicitudes; espera 5 minutos antes de continuar.` : formatExportSummary(result.files.length, result.failures.length);
 			} catch (caught) {
 				controller = null;
 				exportSummary = {

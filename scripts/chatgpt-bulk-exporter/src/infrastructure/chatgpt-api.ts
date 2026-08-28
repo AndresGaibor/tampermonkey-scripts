@@ -71,7 +71,12 @@ export async function fetchConversationForExport(conversationId: string, signal?
 }
 
 export interface ConversationHistoryProgress { loaded: number; total: number | null; }
-export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; onProgress?: (progress: ConversationHistoryProgress) => void; onUpdate?: (conversations: SidebarConversation[]) => void; }
+export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; pageDelayMs?: number; wait?: (ms: number, signal?: AbortSignal) => Promise<void>; onProgress?: (progress: ConversationHistoryProgress) => void; onUpdate?: (conversations: SidebarConversation[]) => void; }
+
+function waitFor(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve, reject) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true }); });
+}
 type HistoryItem = Record<string, unknown>;
 type HistoryPayload = { items: unknown[]; total: number | null };
 
@@ -102,10 +107,11 @@ function normalizeHistoryItem(item: unknown): SidebarConversation | null {
 }
 
 export async function fetchConversationHistory(options: FetchConversationHistoryOptions = {}): Promise<SidebarConversation[]> {
-  const { signal, pageSize = 28, onProgress, onUpdate } = options;
+  const { signal, pageSize = 28, pageDelayMs = 2_000, wait = waitFor, onProgress, onUpdate } = options;
   const conversations: SidebarConversation[] = []; const seen = new Set<string>();
   let offset = 0; let total: number | null = null;
   while (true) {
+    if (offset > 0) await wait(pageDelayMs, signal);
     const query = new URLSearchParams({ offset: String(offset), limit: String(pageSize), order: 'updated' });
     const response = await authenticatedFetch(`/backend-api/conversations?${query}`, signal);
     if (!response.ok) throw new ChatGptApiError(`Conversation history request failed (${response.status})`, response.status);

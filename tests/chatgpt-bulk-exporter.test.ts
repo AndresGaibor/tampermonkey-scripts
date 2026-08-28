@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { normalizeTimestamp, formatDateTime } from '../scripts/chatgpt-bulk-exporter/src/domain/dates.ts';
-import { clearSessionTokenCache, fetchConversation, fetchConversationForExport, fetchConversationHistory } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
+import { ChatGptApiError, clearSessionTokenCache, fetchConversation, fetchConversationForExport, fetchConversationHistory } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
 import { conversationFromDocument } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/conversation-dom.ts';
 import { normalizeConversation, getActiveBranch } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation.ts';
 import { renderMarkdown } from '../scripts/chatgpt-bulk-exporter/src/domain/markdown.ts';
@@ -204,11 +204,11 @@ describe('historial paginado', () => {
       return new Response(JSON.stringify({ data: { items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 } }), { status: 200 });
     }) as typeof fetch;
     try {
-      const result = await fetchConversationHistory({ pageSize: 2, onUpdate: chats => updates.push(chats.map(chat => chat.id)), onProgress: value => progress.push(value) });
+      const waits: number[] = []; const result = await fetchConversationHistory({ pageSize: 2, wait: async ms => { waits.push(ms); }, onUpdate: chats => updates.push(chats.map(chat => chat.id)), onProgress: value => progress.push(value) });
       expect(calls[0]).toContain('offset=0'); expect(calls[0]).toContain('limit=2'); expect(calls[1]).toContain('offset=2');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']); expect(result).toHaveLength(3);
       expect(result[0].href).toBe('/c/chat-1'); expect(result[0].createdAt).not.toBeNull(); expect(result[0].updatedAt).not.toBeNull();
-      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]); expect(updates).toEqual([['chat-1', 'chat-2'], ['chat-1', 'chat-2', 'chat-3']]);
+      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]); expect(updates).toEqual([['chat-1', 'chat-2'], ['chat-1', 'chat-2', 'chat-3']]); expect(waits).toEqual([2_000, 2_000]);
     } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
   test('continúa después de una página corta aunque el total reportado ya se alcanzó', async () => {
@@ -220,7 +220,7 @@ describe('historial paginado', () => {
       return new Response(JSON.stringify({ items: [], total: 2 }), { status: 200 });
     }) as typeof fetch;
     try {
-      const result = await fetchConversationHistory({ pageSize: 28 });
+      const result = await fetchConversationHistory({ pageSize: 28, wait: async () => {} });
       expect(calls).toHaveLength(3); expect(calls[1]).toContain('offset=2'); expect(calls[2]).toContain('offset=3');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']);
     } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
@@ -228,7 +228,7 @@ describe('historial paginado', () => {
   test('usa create_time como fallback y omite entradas sin ID', async () => {
     clearSessionTokenCache(); const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => String(input) === '/api/auth/session' ? new Response(JSON.stringify({ accessToken: 'history-token' }), { status: 200 }) : new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
-    try { const result = await fetchConversationHistory({ pageSize: 28 }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
+    try { const result = await fetchConversationHistory({ pageSize: 28, wait: async () => {} }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
 });
 
@@ -272,8 +272,12 @@ describe('exportBatch and zip', () => {
   });
   test('procesa secuencialmente, continúa errores y reporta progreso', async () => {
     const order: string[] = []; const progress: string[] = [];
-    const result = await exportBatch({ conversationIds: ['a', 'bad', 'c'], fetchConversation: async id => { order.push(id); if (id === 'bad') throw new Error('no'); return normalizeConversation(raw()); }, onProgress: p => { if (p.state === 'done' || p.state === 'failed') progress.push(`${p.index}/${p.total}`); }, now: new Date(0) });
-    expect(order).toEqual(['a', 'bad', 'c']); expect(result.files).toHaveLength(2); expect(result.failures).toEqual(['bad']); expect(progress).toEqual(['1/3', '2/3', '3/3']);
+    const waits: number[] = []; const result = await exportBatch({ conversationIds: ['a', 'bad', 'c'], fetchConversation: async id => { order.push(id); if (id === 'bad') throw new Error('no'); return normalizeConversation(raw()); }, wait: async ms => { waits.push(ms); }, onProgress: p => { if (p.state === 'done' || p.state === 'failed') progress.push(`${p.index}/${p.total}`); }, now: new Date(0) });
+    expect(order).toEqual(['a', 'bad', 'c']); expect(result.files).toHaveLength(2); expect(result.failures).toEqual(['bad']); expect(progress).toEqual(['1/3', '2/3', '3/3']); expect(waits).toEqual([3_000, 3_000]);
+  });
+  test('se detiene al recibir límite de tasa y conserva los éxitos previos', async () => {
+    const order: string[] = []; const result = await exportBatch({ conversationIds: ['a', 'limited', 'c'], wait: async () => {}, fetchConversation: async id => { order.push(id); if (id === 'limited') throw new ChatGptApiError('rate limited', 429); return normalizeConversation(raw()); }, now: new Date(0) });
+    expect(order).toEqual(['a', 'limited']); expect(result.files).toHaveLength(1); expect(result.rateLimited).toBe(true); expect(result.failures).toEqual([]);
   });
   test('cancelación impide iniciar chats posteriores', async () => {
     const controller = new AbortController(); const order: string[] = [];
