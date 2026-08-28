@@ -59,8 +59,8 @@ export function mountSidebar(): void {
     try {
       conversations = await fetchConversationHistory({ signal: activeController.signal, onProgress: value => { if (indexController !== activeController) return; progress = value; status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`; } });
       if (indexController !== activeController) return;
-      const hasDates = conversations.some(chat => chat.createdAt || chat.updatedAt);
-      if (!conversations.length || !hasDates) { if (!conversations.length) conversations = visibleLinks(); startProgressiveIndex(activeController); } else { historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh(); indexController = null; }
+      const hasIncompleteDates = conversations.some(chat => !chat.createdAt || !chat.updatedAt);
+      if (!conversations.length || hasIncompleteDates) { if (!conversations.length) conversations = visibleLinks(); startProgressiveIndex(activeController); } else { historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh(); indexController = null; }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return; if (indexController !== activeController) return;
       conversations = visibleLinks(); startProgressiveIndex(activeController);

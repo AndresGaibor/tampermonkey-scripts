@@ -18,7 +18,10 @@ function contentOf(content: any): string {
 export function normalizeConversation(raw: any): Conversation {
   if (!raw || typeof raw !== 'object' || typeof raw.conversation_id !== 'string' || !raw.mapping || typeof raw.mapping !== 'object') throw new Error('Unsupported conversation format');
   const messages = Object.entries(raw.mapping).flatMap(([key, node]: [string, any]) => node?.message ? [{ id: String(node.message.id ?? key), parentId: node.parent ?? null, role: roleOf(node.message.author?.role), createdAt: normalizeTimestamp(node.message.create_time), content: contentOf(node.message.content) }] : []);
-  return { id: raw.conversation_id, title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'ChatGPT chat', createdAt: normalizeTimestamp(raw.create_time), updatedAt: normalizeTimestamp(raw.update_time), currentNode: typeof raw.current_node === 'string' ? raw.current_node : null, messages };
+  const messageDates = messages.map(message => message.createdAt).filter((date): date is Date => date !== null);
+  const firstMessageDate = messageDates.length ? new Date(Math.min(...messageDates.map(date => date.getTime()))) : null;
+  const lastMessageDate = messageDates.length ? new Date(Math.max(...messageDates.map(date => date.getTime()))) : null;
+  return { id: raw.conversation_id, title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'ChatGPT chat', createdAt: normalizeTimestamp(raw.create_time) ?? firstMessageDate, updatedAt: normalizeTimestamp(raw.update_time) ?? lastMessageDate ?? firstMessageDate, currentNode: typeof raw.current_node === 'string' ? raw.current_node : null, messages };
 }
 export function getActiveBranch(conversation: Conversation): ConversationMessage[] {
   const byId = new Map(conversation.messages.map(message => [message.id, message]));

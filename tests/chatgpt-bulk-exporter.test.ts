@@ -31,6 +31,11 @@ describe('ChatGPT Bulk Exporter domain', () => {
     expect(conversation.id).toBe('c1');
     expect(getActiveBranch(conversation).map(m => m.content)).toEqual(['Pregunta', 'Respuesta']);
   });
+  test('usa fechas de mensajes cuando faltan fechas de metadata', () => {
+    const conversation = normalizeConversation({ ...raw(), create_time: null, update_time: null });
+    expect(conversation.createdAt?.getTime()).toBe(1724672589000);
+    expect(conversation.updatedAt?.getTime()).toBe(1724672593000);
+  });
   test('normaliza timestamp segundos, milisegundos, epoch string, ISO, faltante e inválido', () => {
     expect(normalizeTimestamp(1779990000)?.getTime()).toBe(1779990000000);
     expect(normalizeTimestamp(1779990000000)?.getTime()).toBe(1779990000000);

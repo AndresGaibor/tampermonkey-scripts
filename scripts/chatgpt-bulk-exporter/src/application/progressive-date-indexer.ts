@@ -24,7 +24,8 @@ export async function indexConversationDates(options: DateIndexOptions): Promise
   for (const conversation of conversations) {
     const cached = byId.get(conversation.id);
     if (cached) onUpdate?.(cachedToSidebarConversation(cached, conversation));
-    if (!cached || now - cached.validatedAt >= CACHE_TTL_MS) stale.push(conversation);
+    const missingDate = !conversation.createdAt || !conversation.updatedAt;
+    if (!cached || now - cached.validatedAt >= CACHE_TTL_MS || missingDate) stale.push(conversation);
   }
   let loaded = 0;
   const report = () => onProgress?.({ loaded: ++loaded, total: stale.length });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.10
+// @version      0.1.11
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -172,11 +172,14 @@
 			createdAt: normalizeTimestamp(node.message.create_time),
 			content: contentOf(node.message.content)
 		}] : []);
+		const messageDates = messages.map((message) => message.createdAt).filter((date) => date !== null);
+		const firstMessageDate = messageDates.length ? new Date(Math.min(...messageDates.map((date) => date.getTime()))) : null;
+		const lastMessageDate = messageDates.length ? new Date(Math.max(...messageDates.map((date) => date.getTime()))) : null;
 		return {
 			id: raw.conversation_id,
 			title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "ChatGPT chat",
-			createdAt: normalizeTimestamp(raw.create_time),
-			updatedAt: normalizeTimestamp(raw.update_time),
+			createdAt: normalizeTimestamp(raw.create_time) ?? firstMessageDate,
+			updatedAt: normalizeTimestamp(raw.update_time) ?? lastMessageDate ?? firstMessageDate,
 			currentNode: typeof raw.current_node === "string" ? raw.current_node : null,
 			messages
 		};
@@ -451,7 +454,8 @@
 		for (const conversation of conversations) {
 			const cached = byId.get(conversation.id);
 			if (cached) onUpdate?.(cachedToSidebarConversation(cached, conversation));
-			if (!cached || now - cached.validatedAt >= 864e5) stale.push(conversation);
+			const missingDate = !conversation.createdAt || !conversation.updatedAt;
+			if (!cached || now - cached.validatedAt >= 864e5 || missingDate) stale.push(conversation);
 		}
 		let loaded = 0;
 		const report = () => onProgress?.({
@@ -1408,8 +1412,8 @@
 					}
 				});
 				if (indexController !== activeController) return;
-				const hasDates = conversations.some((chat) => chat.createdAt || chat.updatedAt);
-				if (!conversations.length || !hasDates) {
+				const hasIncompleteDates = conversations.some((chat) => !chat.createdAt || !chat.updatedAt);
+				if (!conversations.length || hasIncompleteDates) {
 					if (!conversations.length) conversations = visibleLinks();
 					startProgressiveIndex(activeController);
 				} else {
