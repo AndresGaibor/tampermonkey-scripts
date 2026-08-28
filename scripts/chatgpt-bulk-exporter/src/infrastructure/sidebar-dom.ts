@@ -3,6 +3,48 @@ import type { SidebarConversation } from '../domain/conversation-filter.ts';
 
 export interface ConversationLink extends SidebarConversation { element: HTMLAnchorElement; }
 
+interface ReactDates { createdAt: Date | null; updatedAt: Date | null; }
+
+function reactFiber(element: Element): Record<string, unknown> | null {
+  const key = Object.keys(element).find(name => name.startsWith('__reactFiber$'));
+  return key ? ((element as unknown as Record<string, unknown>)[key] as Record<string, unknown> | null) : null;
+}
+
+function datesFromHistoryItem(value: unknown, id: string, depth = 0, seen = new WeakSet<object>()): ReactDates | null {
+  if (!value || typeof value !== 'object' || depth > 8 || seen.has(value)) return null;
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  const itemId = typeof record.id === 'string' ? record.id : typeof record.conversation_id === 'string' ? record.conversation_id : null;
+  if (itemId === id && ('create_time' in record || 'update_time' in record)) {
+    const createdAt = normalizeTimestamp(record.create_time ?? record.created_at);
+    const updatedAt = normalizeTimestamp(record.update_time ?? record.updated_at) ?? createdAt;
+    return { createdAt, updatedAt };
+  }
+  for (const [key, child] of Object.entries(record)) {
+    if (key === '_owner' || key === 'children' || key === 'return' || key === 'stateNode') continue;
+    const found = datesFromHistoryItem(child, id, depth + 1, seen); if (found) return found;
+  }
+  return null;
+}
+
+function datesFromReactLink(element: Element, id: string): ReactDates | null {
+  let fiber = reactFiber(element);
+  for (let level = 0; fiber && level < 7; level++) {
+    const found = datesFromHistoryItem(fiber.memoizedProps, id); if (found) return found;
+    fiber = fiber.return as Record<string, unknown> | null;
+  }
+  return null;
+}
+
+function pageElementForHref(element: HTMLAnchorElement, href: string): HTMLAnchorElement {
+  try {
+    if (typeof unsafeWindow !== 'undefined') {
+      return [...unsafeWindow.document.querySelectorAll<HTMLAnchorElement>('a[href^="/c/"]')].find(link => link.getAttribute('href') === href) ?? element;
+    }
+  } catch {}
+  return element;
+}
+
 function readTimestamp(element: Element, names: string[]): Date | null {
   let current: Element | null = element;
   while (current) {
@@ -21,9 +63,10 @@ export function findConversationLinks(root: ParentNode = document): Conversation
     const href = element.getAttribute('href') || ''; const match = href.match(/^\/c\/([^/?#]+)/); if (!match) return;
     const id = decodeURIComponent(match[1]); if (seen.has(id)) return; seen.add(id);
     const row = element.closest<HTMLElement>('[data-sidebar-item], [data-conversation-id]') || element;
-    result.push({ id, href, title: element.textContent?.trim() || 'ChatGPT chat', element,
-      createdAt: readTimestamp(row, ['data-create-time', 'data-created-at', 'data-created']),
-      updatedAt: readTimestamp(row, ['data-update-time', 'data-updated-at', 'data-updated']) });
+    const reactDates = datesFromReactLink(pageElementForHref(element, href), id);
+    const createdAt = readTimestamp(row, ['data-create-time', 'data-created-at', 'data-created']) ?? reactDates?.createdAt ?? null;
+    const updatedAt = readTimestamp(row, ['data-update-time', 'data-updated-at', 'data-updated']) ?? reactDates?.updatedAt ?? createdAt;
+    result.push({ id, href, title: element.textContent?.trim() || 'ChatGPT chat', element, createdAt, updatedAt });
   });
   return result;
 }

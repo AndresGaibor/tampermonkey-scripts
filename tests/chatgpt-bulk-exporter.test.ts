@@ -122,6 +122,14 @@ describe('selection and sidebar', () => {
     expect(conversation.createdAt?.getTime()).toBe(1724672589000);
     expect(conversation.updatedAt?.getTime()).toBe(1724672706000);
   });
+  test('encuentra fechas guardadas en historyItem de las props React del sidebar', () => {
+    const dom = new JSDOM('<aside><a href="/c/one">One</a></aside>');
+    const link = dom.window.document.querySelector('a')! as HTMLAnchorElement & Record<string, unknown>;
+    link.__reactFiber$test = { memoizedProps: { label: { props: { historyItem: { id: 'one', create_time: '2026-08-26T19:43:09Z', update_time: '2026-08-26T19:55:06Z' } } } }, return: null };
+    const conversation = findConversationLinks(dom.window.document)[0];
+    expect(conversation.createdAt?.toISOString()).toBe('2026-08-26T19:43:09.000Z');
+    expect(conversation.updatedAt?.toISOString()).toBe('2026-08-26T19:55:06.000Z');
+  });
   test('encuentra solo links de conversación y decora idempotentemente', () => {
     const dom = new JSDOM('<aside><a href="/c/one">One</a><a href="/settings">Settings</a><a href="/c/one">Duplicate</a></aside>');
     const aside = dom.window.document.querySelector('aside')!;

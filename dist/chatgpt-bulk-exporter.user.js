@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.12
+// @version      0.1.13
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -11,6 +11,7 @@
 // @match        https://chat.openai.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -49,6 +50,43 @@
 		const p = (n) => String(n).padStart(2, "0");
 		return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}`;
 	}
+	function reactFiber(element) {
+		const key = Object.keys(element).find((name) => name.startsWith("__reactFiber$"));
+		return key ? element[key] : null;
+	}
+	function datesFromHistoryItem(value, id, depth = 0, seen = new WeakSet()) {
+		if (!value || typeof value !== "object" || depth > 8 || seen.has(value)) return null;
+		seen.add(value);
+		const record = value;
+		if ((typeof record.id === "string" ? record.id : typeof record.conversation_id === "string" ? record.conversation_id : null) === id && ("create_time" in record || "update_time" in record)) {
+			const createdAt = normalizeTimestamp(record.create_time ?? record.created_at);
+			return {
+				createdAt,
+				updatedAt: normalizeTimestamp(record.update_time ?? record.updated_at) ?? createdAt
+			};
+		}
+		for (const [key, child] of Object.entries(record)) {
+			if (key === "_owner" || key === "children" || key === "return" || key === "stateNode") continue;
+			const found = datesFromHistoryItem(child, id, depth + 1, seen);
+			if (found) return found;
+		}
+		return null;
+	}
+	function datesFromReactLink(element, id) {
+		let fiber = reactFiber(element);
+		for (let level = 0; fiber && level < 7; level++) {
+			const found = datesFromHistoryItem(fiber.memoizedProps, id);
+			if (found) return found;
+			fiber = fiber.return;
+		}
+		return null;
+	}
+	function pageElementForHref(element, href) {
+		try {
+			if (typeof unsafeWindow !== "undefined") return [...unsafeWindow.document.querySelectorAll("a[href^=\"/c/\"]")].find((link) => link.getAttribute("href") === href) ?? element;
+		} catch {}
+		return element;
+	}
 	function readTimestamp(element, names) {
 		let current = element;
 		while (current) {
@@ -71,21 +109,24 @@
 			if (seen.has(id)) return;
 			seen.add(id);
 			const row = element.closest("[data-sidebar-item], [data-conversation-id]") || element;
+			const reactDates = datesFromReactLink(pageElementForHref(element, href), id);
+			const createdAt = readTimestamp(row, [
+				"data-create-time",
+				"data-created-at",
+				"data-created"
+			]) ?? reactDates?.createdAt ?? null;
+			const updatedAt = readTimestamp(row, [
+				"data-update-time",
+				"data-updated-at",
+				"data-updated"
+			]) ?? reactDates?.updatedAt ?? createdAt;
 			result.push({
 				id,
 				href,
 				title: element.textContent?.trim() || "ChatGPT chat",
 				element,
-				createdAt: readTimestamp(row, [
-					"data-create-time",
-					"data-created-at",
-					"data-created"
-				]),
-				updatedAt: readTimestamp(row, [
-					"data-update-time",
-					"data-updated-at",
-					"data-updated"
-				])
+				createdAt,
+				updatedAt
 			});
 		});
 		return result;

@@ -6,7 +6,7 @@ describe('scripts.manifest', () => {
     const script = getScript('chatgpt-bulk-exporter');
     expect(script?.entry).toBe('scripts/chatgpt-bulk-exporter/src/main.ts');
     expect(script?.userscript.name).toBe('ChatGPT - Bulk Markdown Exporter');
-    expect(script?.userscript.grant).toEqual(['GM_getValue', 'GM_setValue']);
+    expect(script?.userscript.grant).toEqual(['GM_getValue', 'GM_setValue', 'unsafeWindow']);
     expect(script?.userscript.match).toContain('https://chatgpt.com/*');
   });
   test('registra el script Better ChatGPT Assistant', () => {
