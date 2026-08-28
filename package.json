@@ -13,6 +13,8 @@
     "build:demo": "bun tools/vite.ts build demo-current-site",
     "dev:better-chatgpt-assistant": "bun tools/vite.ts dev better-chatgpt-assistant",
     "build:better-chatgpt-assistant": "bun tools/vite.ts build better-chatgpt-assistant",
+    "dev:chatgpt-bulk-exporter": "bun tools/vite.ts dev chatgpt-bulk-exporter",
+    "build:chatgpt-bulk-exporter": "bun tools/vite.ts build chatgpt-bulk-exporter",
     "dev:deuna-outlook": "bun tools/vite.ts dev deuna-outlook",
     "build:deuna-outlook": "bun tools/vite.ts build deuna-outlook",
     "dev:deepseek": "bun tools/vite.ts dev deepseek-session-relay",
@@ -30,5 +32,8 @@
     "typescript": "latest",
     "vite": "latest",
     "vite-plugin-monkey": "latest"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
   }
 }

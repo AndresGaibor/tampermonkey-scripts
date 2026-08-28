@@ -1,0 +1,3 @@
+import { zipSync, strToU8 } from 'fflate';
+export function buildZip(files: { name: string; content: string }[]): Uint8Array { const entries: Record<string, Uint8Array> = {}; for (const file of files) entries[file.name] = strToU8(file.content); return zipSync(entries, { level: 6 }); }
+export function downloadBytes(bytes: Uint8Array, filename: string, type = 'application/zip'): void { const blob = new Blob([bytes as unknown as BlobPart], { type }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }

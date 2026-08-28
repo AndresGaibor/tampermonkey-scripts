@@ -1,0 +1,3 @@
+import { normalizeConversation, type Conversation } from '../domain/conversation.ts';
+export class ConversationFormatError extends Error { name = 'ConversationFormatError'; }
+export async function fetchConversation(conversationId: string, signal?: AbortSignal): Promise<Conversation> { const response = await fetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, { credentials: 'include', signal, headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error(`Conversation request failed (${response.status})`); try { return normalizeConversation(await response.json()); } catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; throw new ConversationFormatError('Unsupported conversation response'); } }
