@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.22
+// @version      0.1.23
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -1334,8 +1334,7 @@
 		});
 	}
 	async function chooseDirectory() {
-		const sandboxWindow = globalThis;
-		const pageWindow = sandboxWindow.unsafeWindow ?? sandboxWindow;
+		const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : globalThis;
 		const picker = pageWindow.showDirectoryPicker;
 		if (!picker) throw new Error("Brave no expone selección de carpetas al userscript. Revisa que estés en https://chatgpt.com y usa Exportar ZIP como alternativa.");
 		const handle = await picker.call(pageWindow);
