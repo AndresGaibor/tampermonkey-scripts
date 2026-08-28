@@ -1,24 +1,78 @@
 import { normalizeConversation, type Conversation } from '../domain/conversation.ts';
 import { normalizeTimestamp } from '../domain/dates.ts';
 import type { SidebarConversation } from '../domain/conversation-filter.ts';
+import { conversationFromDocument } from './conversation-dom.ts';
 
 export function conversationToSidebarMetadata(conversation: Conversation, href = `/c/${encodeURIComponent(conversation.id)}`): SidebarConversation {
   return { id: conversation.id, title: conversation.title, href, createdAt: conversation.createdAt, updatedAt: conversation.updatedAt };
 }
 
 export class ConversationFormatError extends Error { name = 'ConversationFormatError'; }
+export class ChatGptApiError extends Error {
+  name = 'ChatGptApiError';
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
+let sessionToken: string | null = null;
+let pendingSessionToken: Promise<string> | null = null;
+
+export function clearSessionTokenCache(): void { sessionToken = null; pendingSessionToken = null; }
+
+async function getSessionToken(signal?: AbortSignal): Promise<string> {
+  if (sessionToken) return sessionToken;
+  if (!pendingSessionToken) {
+    pendingSessionToken = (async () => {
+      const response = await fetch('/api/auth/session', { credentials: 'include', signal, headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new ChatGptApiError(`Session request failed (${response.status})`, response.status);
+      const payload: unknown = await response.json();
+      const token = payload && typeof payload === 'object' && typeof (payload as Record<string, unknown>).accessToken === 'string' ? (payload as Record<string, unknown>).accessToken as string : '';
+      if (!token) throw new ChatGptApiError('Session token unavailable', response.status);
+      sessionToken = token;
+      return token;
+    })().finally(() => { pendingSessionToken = null; });
+  }
+  return pendingSessionToken;
+}
+
+async function authenticatedFetch(path: string, signal?: AbortSignal, retry = true): Promise<Response> {
+  const token = await getSessionToken(signal);
+  const response = await fetch(path, { credentials: 'include', signal, headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
+  if (response.status === 401 && retry) {
+    if (sessionToken === token) sessionToken = null;
+    return authenticatedFetch(path, signal, false);
+  }
+  return response;
+}
 
 export async function fetchConversation(conversationId: string, signal?: AbortSignal): Promise<Conversation> {
-  const response = await fetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, { credentials: 'include', signal, headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`Conversation request failed (${response.status})`);
+  const response = await authenticatedFetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, signal);
+  if (!response.ok) throw new ChatGptApiError(`Conversation request failed (${response.status})`, response.status);
   try { return normalizeConversation(await response.json()); }
   catch (error) { if (error instanceof DOMException && error.name === 'AbortError') throw error; throw new ConversationFormatError('Unsupported conversation response'); }
+}
+
+export interface ConversationExportFallbackOptions {
+  document?: Document;
+  pathname?: string;
+  fetchConversation?: (id: string, signal?: AbortSignal) => Promise<Conversation>;
+}
+
+export async function fetchConversationForExport(conversationId: string, signal?: AbortSignal, options: ConversationExportFallbackOptions = {}): Promise<Conversation> {
+  const fetchDetail = options.fetchConversation ?? fetchConversation;
+  try { return await fetchDetail(conversationId, signal); }
+  catch (error) {
+    if (signal?.aborted) throw error;
+    const documentValue = options.document ?? (typeof document === 'undefined' ? undefined : document);
+    const pathname = options.pathname ?? (typeof location === 'undefined' ? '' : location.pathname);
+    const fallback = documentValue ? conversationFromDocument(conversationId, documentValue, pathname) : null;
+    if (fallback) return fallback;
+    throw error;
+  }
 }
 
 export interface ConversationHistoryProgress { loaded: number; total: number | null; }
 export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; onProgress?: (progress: ConversationHistoryProgress) => void; }
 type HistoryItem = Record<string, unknown>;
-
 type HistoryPayload = { items: unknown[]; total: number | null };
 
 function readHistoryPayload(payload: unknown): HistoryPayload {
@@ -53,11 +107,10 @@ export async function fetchConversationHistory(options: FetchConversationHistory
   let offset = 0; let total: number | null = null;
   while (true) {
     const query = new URLSearchParams({ offset: String(offset), limit: String(pageSize), order: 'updated' });
-    const response = await fetch(`/backend-api/conversations?${query}`, { credentials: 'include', signal, headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error(`Conversation history request failed (${response.status})`);
+    const response = await authenticatedFetch(`/backend-api/conversations?${query}`, signal);
+    if (!response.ok) throw new ChatGptApiError(`Conversation history request failed (${response.status})`, response.status);
     const payload: unknown = await response.json();
-    const page = readHistoryPayload(payload);
-    const items = page.items;
+    const page = readHistoryPayload(payload); const items = page.items;
     if (page.total !== null) total = page.total;
     if (items.length === 0) break;
     let added = 0;

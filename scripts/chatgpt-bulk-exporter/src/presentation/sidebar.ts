@@ -1,12 +1,17 @@
 import { findConversationLinks, decorateConversation, findSidebarMountTarget } from '../infrastructure/sidebar-dom.ts';
 import { SelectionStore } from '../application/selection.ts';
 import { exportBatch } from '../application/exporter.ts';
-import { fetchConversation, fetchConversationHistory } from '../infrastructure/chatgpt-api.ts';
+import { fetchConversation, fetchConversationForExport, fetchConversationHistory } from '../infrastructure/chatgpt-api.ts';
 import { indexConversationDates } from '../application/progressive-date-indexer.ts';
 import { tampermonkeyDateCache } from '../infrastructure/conversation-date-cache.ts';
 import { buildZip, downloadBytes } from '../infrastructure/download.ts';
 import { filterAndSortConversations, hasInvertedRange, parseDateInput, type DateField, type DateRange, type SidebarConversation } from '../domain/conversation-filter.ts';
 import { formatDateTime } from '../domain/dates.ts';
+
+export function formatExportSummary(exported: number, failed: number): string {
+  if (failed) return `${exported} exportado${exported === 1 ? '' : 's'}, ${failed} fallido${failed === 1 ? '' : 's'}.`;
+  return `${exported} chat${exported === 1 ? '' : 's'} exportado${exported === 1 ? '' : 's'} correctamente.`;
+}
 
 export function mountSelectionTrigger(target: HTMLElement, onClick?: () => void): HTMLButtonElement {
   const existing = target.ownerDocument.querySelector<HTMLButtonElement>('[data-cbe-selection-trigger="true"]');
@@ -26,7 +31,7 @@ export function mountSidebar(): void {
   let root = document.getElementById('cbe-root'); if (root?.isConnected) return;
   const store = new SelectionStore(); let selecting = false; let controller: AbortController | null = null; let indexController: AbortController | null = null;
   let conversations: SidebarConversation[] = []; let historyState: 'idle' | 'loading' | 'indexing' | 'ready' | 'error' = 'idle'; let progress = { loaded: 0, total: null as number | null };
-  let field: DateField = 'updated'; let filterOpen = false;
+  let field: DateField = 'updated'; let filterOpen = false; let exportSummary: { exported: number; failed: number } | null = null;
   root = document.createElement('div'); root.id = 'cbe-root';
   const overlay = document.createElement('div'); overlay.className = 'cbe-modal-overlay'; overlay.hidden = true; overlay.dataset.cbeOverlay = 'true';
   const popover = document.createElement('section'); popover.className = 'cbe-popover'; popover.hidden = true; popover.dataset.cbePopover = 'true'; popover.setAttribute('role', 'dialog'); popover.setAttribute('aria-modal', 'true'); popover.setAttribute('aria-label', 'Exportar chats');
@@ -41,9 +46,9 @@ export function mountSidebar(): void {
   const visibleLinks = () => findConversationLinks(document);
   const refresh = () => {
     const current = range(); const invalid = hasInvertedRange(current); error.hidden = !invalid; error.textContent = invalid ? 'Desde debe ser anterior o igual a Hasta.' : '';
-    count.textContent = `${store.size} seleccionado${store.size === 1 ? '' : 's'}`; exportButton.textContent = `Exportar (${store.size})`; exportButton.disabled = store.size === 0 || controller !== null;
-    const filteringDisabled = historyState === 'loading'; select.disabled = filteringDisabled; fields.querySelectorAll('input').forEach(input => { input.disabled = filteringDisabled; });
-    const visible = historyState === 'loading' ? [] : invalid ? [] : filterAndSortConversations(conversations, field, current); selectAll.disabled = visible.length === 0 || invalid || historyState === 'loading'; clear.disabled = store.size === 0;
+    count.textContent = exportSummary ? `${exportSummary.exported} exportado${exportSummary.exported === 1 ? '' : 's'}` : `${store.size} seleccionado${store.size === 1 ? '' : 's'}`; exportButton.textContent = exportSummary ? 'Cerrar' : `Exportar (${store.size})`; exportButton.disabled = exportSummary ? false : store.size === 0 || controller !== null;
+    const filteringDisabled = historyState === 'loading' || exportSummary !== null; select.disabled = filteringDisabled; fields.querySelectorAll('input').forEach(input => { input.disabled = filteringDisabled; });
+    const visible = historyState === 'loading' ? [] : invalid ? [] : filterAndSortConversations(conversations, field, current); selectAll.disabled = visible.length === 0 || invalid || historyState === 'loading' || exportSummary !== null; clear.disabled = store.size === 0 || exportSummary !== null;
     overlay.hidden = popover.hidden;
     list.replaceChildren(); empty.hidden = historyState === 'loading' || visible.length > 0; empty.textContent = invalid ? 'Corrige el rango de fechas.' : conversations.length === 0 ? 'No hay chats disponibles.' : 'No hay chats que coincidan con este filtro.'; if (historyState === 'indexing') status.textContent = `Indexando fechas ${progress.loaded}/${progress.total ?? conversations.length}`;
     for (const conversation of visible) { const row = document.createElement('label'); row.className = `cbe-filter-row${store.has(conversation.id) ? ' is-selected' : ''}`; const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'cbe-visually-hidden'; input.checked = store.has(conversation.id); input.setAttribute('aria-label', `Seleccionar ${conversation.title}`); input.addEventListener('change', () => { input.checked ? store.add(conversation.id) : store.remove(conversation.id); refresh(); }); const mark = document.createElement('span'); mark.className = 'cbe-row-check'; mark.setAttribute('aria-hidden', 'true'); const text = document.createElement('span'); const title = document.createElement('strong'); title.textContent = conversation.title; const date = document.createElement('small'); const dateValue = field === 'created' ? conversation.createdAt : conversation.updatedAt; date.textContent = `${field === 'created' ? 'Creado' : 'Actualizado'}: ${formatDateTime(dateValue)}`; text.append(title, date); row.append(input, mark, text); list.append(row); }
@@ -66,11 +71,24 @@ export function mountSidebar(): void {
       conversations = visibleLinks(); startProgressiveIndex(activeController);
     }
   };
-  const exit = () => { controller?.abort(); indexController?.abort(); controller = null; indexController = null; selecting = false; store.clear(); popover.hidden = true; overlay.hidden = true; filterOpen = false; filterPanel.hidden = true; filterToggle.setAttribute('aria-expanded', 'false'); for (const link of visibleLinks()) { link.element.querySelector('[data-cbe-checkbox]')?.remove(); link.element.querySelector('[data-cbe-selection-marker]')?.remove(); link.element.classList.remove('cbe-is-selected'); } conversations = []; historyState = 'idle'; trigger.hidden = false; refresh(); };
+  const exit = () => { controller?.abort(); indexController?.abort(); controller = null; indexController = null; exportSummary = null; selecting = false; store.clear(); popover.hidden = true; overlay.hidden = true; filterOpen = false; filterPanel.hidden = true; filterToggle.setAttribute('aria-expanded', 'false'); for (const link of visibleLinks()) { link.element.querySelector('[data-cbe-checkbox]')?.remove(); link.element.querySelector('[data-cbe-selection-marker]')?.remove(); link.element.classList.remove('cbe-is-selected'); } conversations = []; historyState = 'idle'; trigger.hidden = false; refresh(); };
   const trigger = mountSelectionTrigger(target, () => { selecting = true; popover.hidden = false; overlay.hidden = false; trigger.hidden = true; trigger.setAttribute('aria-expanded', 'true'); popover.style.width = `${Math.min(390, window.innerWidth - 24)}px`; void loadHistory(); }); trigger.setAttribute('aria-controls', 'cbe-export-popover'); popover.id = 'cbe-export-popover';
   for (const eventName of ['pointerdown', 'mousedown', 'click', 'touchstart'] as const) popover.addEventListener(eventName, event => event.stopPropagation());
   overlay.addEventListener('click', exit); close.addEventListener('click', exit); cancel.addEventListener('click', exit); filterToggle.addEventListener('click', () => { filterOpen = !filterOpen; filterPanel.hidden = !filterOpen; filterToggle.setAttribute('aria-expanded', String(filterOpen)); }); select.addEventListener('change', () => { field = select.value as DateField; refresh(); }); fields.addEventListener('input', refresh);
   selectAll.addEventListener('click', () => { for (const conversation of filterAndSortConversations(conversations, field, range())) store.add(conversation.id); refresh(); }); clear.addEventListener('click', () => { store.clear(); refresh(); });
-  exportButton.addEventListener('click', async () => { if (!store.size) return; controller = new AbortController(); refresh(); try { const result = await exportBatch({ conversationIds: store.ids, signal: controller.signal, fetchConversation, onProgress: p => { if (p.state === 'fetching' || p.state === 'rendering') count.textContent = `Exportando ${p.index} de ${p.total}`; }, now: new Date() }); if (!result.cancelled && result.files.length) { const stamp = new Date(); const pad = (n: number) => String(n).padStart(2, '0'); downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth()+1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`); } } finally { controller = null; exit(); } });
+  exportButton.addEventListener('click', async () => {
+    if (exportSummary) { exit(); return; }
+    if (!store.size) return;
+    controller = new AbortController(); const activeController = controller; refresh();
+    try {
+      const result = await exportBatch({ conversationIds: store.ids, signal: activeController.signal, fetchConversation: fetchConversationForExport, onProgress: p => { if (p.state === 'fetching' || p.state === 'rendering') count.textContent = `Exportando ${p.index} de ${p.total}`; }, now: new Date() });
+      if (result.cancelled) { exit(); return; }
+      if (result.files.length) { const stamp = new Date(); const pad = (n: number) => String(n).padStart(2, '0'); downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth()+1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`); }
+      controller = null; exportSummary = { exported: result.files.length, failed: result.failures.length }; refresh();
+      status.textContent = formatExportSummary(result.files.length, result.failures.length);
+    } catch (caught) {
+      controller = null; exportSummary = { exported: 0, failed: store.size }; refresh(); status.textContent = caught instanceof Error ? `No se pudo completar la exportación: ${caught.message}` : 'No se pudo completar la exportación.';
+    }
+  });
   status.textContent = 'Cargando historial…'; refresh();
 }

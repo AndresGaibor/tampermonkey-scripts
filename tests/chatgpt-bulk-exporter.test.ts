@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { normalizeTimestamp, formatDateTime } from '../scripts/chatgpt-bulk-exporter/src/domain/dates.ts';
-import { fetchConversationHistory } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
+import { clearSessionTokenCache, fetchConversation, fetchConversationForExport, fetchConversationHistory } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
+import { conversationFromDocument } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/conversation-dom.ts';
 import { normalizeConversation, getActiveBranch } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation.ts';
 import { renderMarkdown } from '../scripts/chatgpt-bulk-exporter/src/domain/markdown.ts';
 import { createFilename, uniqueFilename } from '../scripts/chatgpt-bulk-exporter/src/domain/filenames.ts';
 import { SelectionStore } from '../scripts/chatgpt-bulk-exporter/src/application/selection.ts';
 import { findConversationLinks, decorateConversation, findSidebarMountTarget } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/sidebar-dom.ts';
-import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
+import { formatExportSummary, mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
 import { filterAndSortConversations, filterConversations, hasInvertedRange, parseDateInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
@@ -157,12 +158,47 @@ describe('selection and sidebar', () => {
   });
 });
 
+describe('cliente autenticado y fallback DOM', () => {
+  test('envía Bearer y renueva una sola vez después de 401', async () => {
+    clearSessionTokenCache();
+    const originalFetch = globalThis.fetch; const tokens: string[] = []; let sessions = 0; let details = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/auth/session') return new Response(JSON.stringify({ accessToken: `token-${++sessions}` }), { status: 200 });
+      details++; tokens.push(new Headers(init?.headers).get('Authorization') || '');
+      if (details === 1) return new Response('{}', { status: 401 });
+      return new Response(JSON.stringify(raw()), { status: 200 });
+    }) as typeof fetch;
+    try { const result = await fetchConversation('c1'); expect(result.id).toBe('c1'); expect(tokens).toEqual(['Bearer token-1', 'Bearer token-2']); expect(sessions).toBe(2); }
+    finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
+  });
+  test('no incluye el token en errores de la API', async () => {
+    clearSessionTokenCache(); const originalFetch = globalThis.fetch; const secret = 'token-super-secreto';
+    globalThis.fetch = (async (input: RequestInfo | URL) => String(input) === '/api/auth/session' ? new Response(JSON.stringify({ accessToken: secret }), { status: 200 }) : new Response('{}', { status: 500 })) as typeof fetch;
+    try { await expect(fetchConversation('c1')).rejects.not.toThrow(secret); }
+    finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
+  });
+  test('extrae solo turnos semánticos y elimina controles del chat abierto', () => {
+    const dom = new JSDOM('<title>Chat visible</title><aside><div data-message-author-role="assistant">No incluir</div></aside><main><article data-message-author-role="user" data-message-id="u1">Pregunta<button>Copiar</button></article><article data-message-author-role="assistant" data-message-id="a1"><p>Respuesta</p><div aria-hidden="true">Oculto</div></article></main>', { url: 'https://chatgpt.com/c/open' });
+    const result = conversationFromDocument('open', dom.window.document, dom.window.location.pathname);
+    expect(result?.title).toBe('Chat visible'); expect(result?.messages.map(message => message.content)).toEqual(['Pregunta', 'Respuesta']); expect(result?.currentNode).toBe('a1');
+    expect(conversationFromDocument('other', dom.window.document, dom.window.location.pathname)).toBeNull();
+  });
+  test('usa el DOM únicamente cuando falla la API del chat actualmente abierto', async () => {
+    const dom = new JSDOM('<title>Respaldo</title><main><div data-message-author-role="user">Hola</div><div data-message-author-role="assistant">Hola también</div></main>', { url: 'https://chatgpt.com/c/open' });
+    const fetchApi = async () => { throw new Error('Conversation request failed (404)'); };
+    const result = await fetchConversationForExport('open', undefined, { document: dom.window.document, pathname: dom.window.location.pathname, fetchConversation: fetchApi });
+    expect(result.messages).toHaveLength(2);
+    await expect(fetchConversationForExport('other', undefined, { document: dom.window.document, pathname: dom.window.location.pathname, fetchConversation: fetchApi })).rejects.toThrow('404');
+  });
+});
+
 describe('historial paginado', () => {
   test('recupera páginas, deduplica, normaliza fechas y reporta progreso', async () => {
-    const calls: string[] = []; const progress: { loaded: number; total: number | null }[] = [];
+    clearSessionTokenCache(); const calls: string[] = []; const progress: { loaded: number; total: number | null }[] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input); calls.push(url);
+      const url = String(input); if (url === '/api/auth/session') return new Response(JSON.stringify({ accessToken: 'history-token' }), { status: 200 }); calls.push(url);
       if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: ' Uno ', create_time: '2026-08-25T10:00:00.000Z', update_time: '2026-08-28T10:00:00.000Z' }, { id: 'chat-2', title: 'Dos', create_time: '2026-08-24T10:00:00.000Z', update_time: '2026-08-27T10:00:00.000Z' }], total: 3 }), { status: 200 });
       return new Response(JSON.stringify({ data: { items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 } }), { status: 200 });
     }) as typeof fetch;
@@ -172,12 +208,12 @@ describe('historial paginado', () => {
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']); expect(result).toHaveLength(3);
       expect(result[0].href).toBe('/c/chat-1'); expect(result[0].createdAt).not.toBeNull(); expect(result[0].updatedAt).not.toBeNull();
       expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]);
-    } finally { globalThis.fetch = originalFetch; }
+    } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
   test('continúa después de una página corta aunque el total reportado ya se alcanzó', async () => {
-    const calls: string[] = []; const originalFetch = globalThis.fetch;
+    clearSessionTokenCache(); const calls: string[] = []; const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input); calls.push(url);
+      const url = String(input); if (url === '/api/auth/session') return new Response(JSON.stringify({ accessToken: 'history-token' }), { status: 200 }); calls.push(url);
       if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: 'Uno' }, { id: 'chat-2', title: 'Dos' }], total: 2 }), { status: 200 });
       if (url.includes('offset=2')) return new Response(JSON.stringify({ items: [{ id: 'chat-3', title: 'Tres' }], total: 2 }), { status: 200 });
       return new Response(JSON.stringify({ items: [], total: 2 }), { status: 200 });
@@ -186,12 +222,12 @@ describe('historial paginado', () => {
       const result = await fetchConversationHistory({ pageSize: 28 });
       expect(calls).toHaveLength(3); expect(calls[1]).toContain('offset=2'); expect(calls[2]).toContain('offset=3');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']);
-    } finally { globalThis.fetch = originalFetch; }
+    } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
   test('usa create_time como fallback y omite entradas sin ID', async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
-    try { const result = await fetchConversationHistory({ pageSize: 28 }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; }
+    clearSessionTokenCache(); const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => String(input) === '/api/auth/session' ? new Response(JSON.stringify({ accessToken: 'history-token' }), { status: 200 }) : new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
+    try { const result = await fetchConversationHistory({ pageSize: 28 }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
 });
 
@@ -228,6 +264,11 @@ describe('índice progresivo y caché de fechas', () => {
 });
 
 describe('exportBatch and zip', () => {
+  test('resume éxitos y fallos del lote', () => {
+    expect(formatExportSummary(2, 1)).toBe('2 exportados, 1 fallido.');
+    expect(formatExportSummary(1, 0)).toBe('1 chat exportado correctamente.');
+    expect(formatExportSummary(0, 3)).toBe('0 exportados, 3 fallidos.');
+  });
   test('procesa secuencialmente, continúa errores y reporta progreso', async () => {
     const order: string[] = []; const progress: string[] = [];
     const result = await exportBatch({ conversationIds: ['a', 'bad', 'c'], fetchConversation: async id => { order.push(id); if (id === 'bad') throw new Error('no'); return normalizeConversation(raw()); }, onProgress: p => { if (p.state === 'done' || p.state === 'failed') progress.push(`${p.index}/${p.total}`); }, now: new Date(0) });

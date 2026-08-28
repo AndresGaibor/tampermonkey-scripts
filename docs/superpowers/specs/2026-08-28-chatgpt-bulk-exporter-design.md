@@ -27,9 +27,15 @@ Crear un userscript independiente para ChatGPT Web que permita seleccionar conve
 
 ## API y privacidad
 
-El endpoint preferido es `GET /backend-api/conversation/:conversationId`, relativo al origen actual. La autenticación usa exclusivamente la sesión normal del navegador (`credentials: 'include'`); no se usan grants privilegiados, cookies manuales, tokens, analytics ni servidores externos. Los detalles del JSON permanecen aislados en el adaptador.
+El endpoint preferido es `GET /backend-api/conversation/:conversationId`, relativo al origen actual. Antes de consultar endpoints internos, el adaptador obtiene el `accessToken` de la sesión mediante `GET /api/auth/session` y envía `Authorization: Bearer <token>` junto con `credentials: 'include'`. El token se conserva exclusivamente en memoria, nunca se registra, persiste, incluye en errores ni sale de `chatgpt.com`. Ante un `401`, el adaptador invalida el token, obtiene uno nuevo y repite la solicitud una sola vez.
 
-La API interna puede cambiar, devolver ramas o variar timestamps. Se soportan variantes conocidas de contenido y timestamps Unix en segundos/milisegundos; respuestas incompatibles fallan explícitamente y no producen Markdown vacío.
+No se usan grants privilegiados, cookies manuales, analytics ni servidores externos. Los detalles del JSON y la autenticación permanecen aislados en el adaptador. La API interna puede cambiar, devolver ramas o variar timestamps. Se soportan variantes conocidas de contenido y timestamps Unix en segundos/milisegundos; respuestas incompatibles fallan explícitamente y no producen Markdown vacío.
+
+## Recuperación de conversaciones inaccesibles y lotes parciales
+
+El mismo cliente autenticado se reutiliza para historial, detalle e indexación progresiva. Si el detalle continúa fallando después de renovar la sesión y el ID solicitado coincide con la ruta activa `/c/:conversationId`, el exportador puede reconstruir un respaldo desde el DOM ya renderizado. Este respaldo recorre en orden los contenedores semánticos con `data-message-author-role="user"` o `data-message-author-role="assistant"`, clona cada turno, elimina botones, controles y elementos marcados como ocultos, y conserva el texto visible. El título procede del encabezado/documento con fallback `ChatGPT chat`; las fechas DOM desconocidas quedan en `null`. No se usa este mecanismo para conversaciones que no están abiertas y no se automatiza la navegación entre chats.
+
+Un fallo individual nunca invalida los éxitos anteriores. Al terminar, se genera el ZIP si existe al menos una conversación exportada y la interfaz muestra un resumen explícito de exportadas y fallidas. Si todas fallan, no se dispara descarga. El modal permanece abierto con el resultado hasta que el usuario lo cierre; cancelar sigue abortando el lote sin descargar resultados incompletos.
 
 ## Filtro por fecha y hora
 
@@ -63,7 +69,7 @@ El filtro valida límites antes de cambiar resultados. Un timestamp inválido se
 
 ## Testing
 
-Se añadirán tests unitarios con Bun para normalización, ramas, fechas, Markdown, filenames, selección, descubrimiento/decoración DOM, secuencialidad, errores parciales, cancelación y ZIP. Para esta ampliación se cubrirán además extracción de metadatos, formato local fecha/hora, límites inclusivos, rango invertido, timestamps desconocidos, filtrado por ambos campos y sincronización de selección. Cada bloque se desarrollará con ciclo RED/GREEN/REFACTOR.
+Se añadirán tests unitarios con Bun para normalización, ramas, fechas, Markdown, filenames, selección, descubrimiento/decoración DOM, secuencialidad, errores parciales, cancelación y ZIP. Para esta ampliación se cubrirán además extracción de metadatos, formato local fecha/hora, límites inclusivos, rango invertido, timestamps desconocidos, filtrado por ambos campos, sincronización de selección, envío del token Bearer, renovación única tras `401`, ausencia de filtración del token en errores, extracción DOM limitada al chat abierto y resumen de lotes parciales. Cada bloque se desarrollará con ciclo RED/GREEN/REFACTOR.
 
 ## Rediseño visual aprobado
 
@@ -92,4 +98,4 @@ La fuente principal seguirá siendo el índice de ChatGPT cuando esté disponibl
 
 ## Alcance
 
-No se persiste contenido de conversaciones, no se altera `main`, no se hace merge/push y no se implementa una API pública de ChatGPT. La prueba manual en navegador queda condicionada a disponer de una sesión autenticada.
+No se persiste contenido ni tokens de conversaciones, no se altera `main`, no se hace merge/push y no se implementa una API pública de ChatGPT. La prueba manual en navegador queda condicionada a disponer de una sesión autenticada.

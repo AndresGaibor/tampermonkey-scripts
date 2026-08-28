@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.16
+// @version      0.1.18
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -330,6 +330,50 @@
 			cancelled: false
 		};
 	}
+	function conversationIdFromPath(pathname) {
+		const match = pathname.match(/^\/c\/([^/?#]+)/);
+		if (!match) return null;
+		try {
+			return decodeURIComponent(match[1]);
+		} catch {
+			return match[1];
+		}
+	}
+	function cleanMessageText(element) {
+		const clone = element.cloneNode(true);
+		clone.querySelectorAll("button, input, textarea, select, option, [role=\"button\"], [aria-hidden=\"true\"], [hidden], script, style").forEach((node) => node.remove());
+		return (clone.textContent || "").replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+	}
+	function documentTitle(document) {
+		return document.querySelector("main h1")?.textContent?.trim() || document.title.replace(/\s*[|–—-]\s*ChatGPT\s*$/i, "").trim() || "ChatGPT chat";
+	}
+	function conversationFromDocument(conversationId, document, pathname) {
+		if (conversationIdFromPath(pathname) !== conversationId) return null;
+		const elements = [...document.querySelectorAll("main [data-message-author-role=\"user\"], main [data-message-author-role=\"assistant\"]")];
+		const messages = [];
+		for (const [index, element] of elements.entries()) {
+			const content = cleanMessageText(element);
+			if (!content) continue;
+			const role = element.dataset.messageAuthorRole;
+			const id = element.dataset.messageId || `dom-message-${index + 1}`;
+			messages.push({
+				id,
+				parentId: messages.at(-1)?.id ?? null,
+				role,
+				createdAt: null,
+				content
+			});
+		}
+		if (!messages.length) return null;
+		return {
+			id: conversationId,
+			title: documentTitle(document),
+			createdAt: null,
+			updatedAt: null,
+			currentNode: messages.at(-1)?.id ?? null,
+			messages
+		};
+	}
 	function conversationToSidebarMetadata(conversation, href = `/c/${encodeURIComponent(conversation.id)}`) {
 		return {
 			id: conversation.id,
@@ -342,18 +386,72 @@
 	var ConversationFormatError = class extends Error {
 		name = "ConversationFormatError";
 	};
-	async function fetchConversation(conversationId, signal) {
-		const response = await fetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, {
+	var ChatGptApiError = class extends Error {
+		status;
+		name = "ChatGptApiError";
+		constructor(message, status) {
+			super(message);
+			this.status = status;
+		}
+	};
+	var sessionToken = null;
+	var pendingSessionToken = null;
+	async function getSessionToken(signal) {
+		if (sessionToken) return sessionToken;
+		if (!pendingSessionToken) pendingSessionToken = (async () => {
+			const response = await fetch("/api/auth/session", {
+				credentials: "include",
+				signal,
+				headers: { Accept: "application/json" }
+			});
+			if (!response.ok) throw new ChatGptApiError(`Session request failed (${response.status})`, response.status);
+			const payload = await response.json();
+			const token = payload && typeof payload === "object" && typeof payload.accessToken === "string" ? payload.accessToken : "";
+			if (!token) throw new ChatGptApiError("Session token unavailable", response.status);
+			sessionToken = token;
+			return token;
+		})().finally(() => {
+			pendingSessionToken = null;
+		});
+		return pendingSessionToken;
+	}
+	async function authenticatedFetch(path, signal, retry = true) {
+		const token = await getSessionToken(signal);
+		const response = await fetch(path, {
 			credentials: "include",
 			signal,
-			headers: { Accept: "application/json" }
+			headers: {
+				Accept: "application/json",
+				Authorization: `Bearer ${token}`
+			}
 		});
-		if (!response.ok) throw new Error(`Conversation request failed (${response.status})`);
+		if (response.status === 401 && retry) {
+			if (sessionToken === token) sessionToken = null;
+			return authenticatedFetch(path, signal, false);
+		}
+		return response;
+	}
+	async function fetchConversation(conversationId, signal) {
+		const response = await authenticatedFetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, signal);
+		if (!response.ok) throw new ChatGptApiError(`Conversation request failed (${response.status})`, response.status);
 		try {
 			return normalizeConversation(await response.json());
 		} catch (error) {
 			if (error instanceof DOMException && error.name === "AbortError") throw error;
 			throw new ConversationFormatError("Unsupported conversation response");
+		}
+	}
+	async function fetchConversationForExport(conversationId, signal, options = {}) {
+		const fetchDetail = options.fetchConversation ?? fetchConversation;
+		try {
+			return await fetchDetail(conversationId, signal);
+		} catch (error) {
+			if (signal?.aborted) throw error;
+			const documentValue = options.document ?? (typeof document === "undefined" ? void 0 : document);
+			const pathname = options.pathname ?? (typeof location === "undefined" ? "" : location.pathname);
+			const fallback = documentValue ? conversationFromDocument(conversationId, documentValue, pathname) : null;
+			if (fallback) return fallback;
+			throw error;
 		}
 	}
 	function readHistoryPayload(payload) {
@@ -412,17 +510,12 @@
 		let offset = 0;
 		let total = null;
 		while (true) {
-			const query = new URLSearchParams({
+			const response = await authenticatedFetch(`/backend-api/conversations?${new URLSearchParams({
 				offset: String(offset),
 				limit: String(pageSize),
 				order: "updated"
-			});
-			const response = await fetch(`/backend-api/conversations?${query}`, {
-				credentials: "include",
-				signal,
-				headers: { Accept: "application/json" }
-			});
-			if (!response.ok) throw new Error(`Conversation history request failed (${response.status})`);
+			})}`, signal);
+			if (!response.ok) throw new ChatGptApiError(`Conversation history request failed (${response.status})`, response.status);
 			const page = readHistoryPayload(await response.json());
 			const items = page.items;
 			if (page.total !== null) total = page.total;
@@ -1238,6 +1331,10 @@
 	function hasInvertedRange(range) {
 		return range.from !== null && range.to !== null && range.from > range.to;
 	}
+	function formatExportSummary(exported, failed) {
+		if (failed) return `${exported} exportado${exported === 1 ? "" : "s"}, ${failed} fallido${failed === 1 ? "" : "s"}.`;
+		return `${exported} chat${exported === 1 ? "" : "s"} exportado${exported === 1 ? "" : "s"} correctamente.`;
+	}
 	function mountSelectionTrigger(target, onClick) {
 		const existing = target.ownerDocument.querySelector("[data-cbe-selection-trigger=\"true\"]");
 		if (existing?.isConnected) return existing;
@@ -1277,6 +1374,7 @@
 		};
 		let field = "updated";
 		let filterOpen = false;
+		let exportSummary = null;
 		root = document.createElement("div");
 		root.id = "cbe-root";
 		const overlay = document.createElement("div");
@@ -1364,17 +1462,17 @@
 			const invalid = hasInvertedRange(current);
 			error.hidden = !invalid;
 			error.textContent = invalid ? "Desde debe ser anterior o igual a Hasta." : "";
-			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
-			exportButton.textContent = `Exportar (${store.size})`;
-			exportButton.disabled = store.size === 0 || controller !== null;
-			const filteringDisabled = historyState === "loading";
+			count.textContent = exportSummary ? `${exportSummary.exported} exportado${exportSummary.exported === 1 ? "" : "s"}` : `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
+			exportButton.textContent = exportSummary ? "Cerrar" : `Exportar (${store.size})`;
+			exportButton.disabled = exportSummary ? false : store.size === 0 || controller !== null;
+			const filteringDisabled = historyState === "loading" || exportSummary !== null;
 			select.disabled = filteringDisabled;
 			fields.querySelectorAll("input").forEach((input) => {
 				input.disabled = filteringDisabled;
 			});
 			const visible = historyState === "loading" ? [] : invalid ? [] : filterAndSortConversations(conversations, field, current);
-			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading";
-			clear.disabled = store.size === 0;
+			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading" || exportSummary !== null;
+			clear.disabled = store.size === 0 || exportSummary !== null;
 			overlay.hidden = popover.hidden;
 			list.replaceChildren();
 			empty.hidden = historyState === "loading" || visible.length > 0;
@@ -1492,6 +1590,7 @@
 			indexController?.abort();
 			controller = null;
 			indexController = null;
+			exportSummary = null;
 			store.clear();
 			popover.hidden = true;
 			overlay.hidden = true;
@@ -1546,27 +1645,48 @@
 			refresh();
 		});
 		exportButton.addEventListener("click", async () => {
+			if (exportSummary) {
+				exit();
+				return;
+			}
 			if (!store.size) return;
 			controller = new AbortController();
+			const activeController = controller;
 			refresh();
 			try {
 				const result = await exportBatch({
 					conversationIds: store.ids,
-					signal: controller.signal,
-					fetchConversation,
+					signal: activeController.signal,
+					fetchConversation: fetchConversationForExport,
 					onProgress: (p) => {
 						if (p.state === "fetching" || p.state === "rendering") count.textContent = `Exportando ${p.index} de ${p.total}`;
 					},
 					now: new Date()
 				});
-				if (!result.cancelled && result.files.length) {
+				if (result.cancelled) {
+					exit();
+					return;
+				}
+				if (result.files.length) {
 					const stamp = new Date();
 					const pad = (n) => String(n).padStart(2, "0");
 					downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
 				}
-			} finally {
 				controller = null;
-				exit();
+				exportSummary = {
+					exported: result.files.length,
+					failed: result.failures.length
+				};
+				refresh();
+				status.textContent = formatExportSummary(result.files.length, result.failures.length);
+			} catch (caught) {
+				controller = null;
+				exportSummary = {
+					exported: 0,
+					failed: store.size
+				};
+				refresh();
+				status.textContent = caught instanceof Error ? `No se pudo completar la exportación: ${caught.message}` : "No se pudo completar la exportación.";
 			}
 		});
 		status.textContent = "Cargando historial…";
