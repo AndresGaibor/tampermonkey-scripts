@@ -65,6 +65,21 @@ El filtro valida límites antes de cambiar resultados. Un timestamp inválido se
 
 Se añadirán tests unitarios con Bun para normalización, ramas, fechas, Markdown, filenames, selección, descubrimiento/decoración DOM, secuencialidad, errores parciales, cancelación y ZIP. Para esta ampliación se cubrirán además extracción de metadatos, formato local fecha/hora, límites inclusivos, rango invertido, timestamps desconocidos, filtrado por ambos campos y sincronización de selección. Cada bloque se desarrollará con ciclo RED/GREEN/REFACTOR.
 
+## Rediseño visual aprobado
+
+La interfaz debe sentirse como una extensión nativa del sidebar de ChatGPT, no como una toolbar independiente:
+
+- El estado normal mostrará una sola acción discreta: `Exportar chats`.
+- Al activarla se abrirá un popover flotante compacto, anclado al control y limitado al ancho disponible del sidebar; nunca deberá provocar scroll horizontal.
+- El popover usará fondo, tipografía, bordes, sombras, colores de hover y focus basados en variables CSS heredadas de ChatGPT, con fallback neutro.
+- Durante la selección no se mostrarán checkboxes nativos permanentes que deformen las filas. Las conversaciones seleccionadas se indicarán con fondo sutil y un check minimalista; el checkbox accesible podrá existir como control visualmente oculto.
+- El encabezado mostrará solo el contador y acciones compactas. Las acciones serán `Seleccionar todo`, `Limpiar` y `Exportar`; `Cancelar` quedará como cierre secundario.
+- El filtro aparecerá dentro de una sección plegable `Filtrar por fecha`, cerrada inicialmente, para evitar una barra saturada. Sus valores se conservarán mientras dure la sesión.
+- Todos los botones tendrán área táctil suficiente, labels accesibles, focus visible y estados disabled claros. Los iconos serán SVG inline, no emojis.
+- El layout será fluido para sidebars estrechos: textos truncados, controles apilables y `max-width: 100%`.
+
+La lógica de selección, filtrado, exportación secuencial, privacidad y ZIP no cambia; solo se reorganiza la presentación y su interacción.
+
 ## Alcance
 
 No se persiste contenido de conversaciones, no se altera `main`, no se hace merge/push y no se implementa una API pública de ChatGPT. La prueba manual en navegador queda condicionada a disponer de una sesión autenticada. El filtro no intenta recuperar metadatos faltantes mediante una petición por cada chat.
