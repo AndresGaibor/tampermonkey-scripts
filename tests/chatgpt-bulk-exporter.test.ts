@@ -171,19 +171,20 @@ describe('historial paginado', () => {
       expect(calls[0]).toContain('offset=0'); expect(calls[0]).toContain('limit=2'); expect(calls[1]).toContain('offset=2');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']); expect(result).toHaveLength(3);
       expect(result[0].href).toBe('/c/chat-1'); expect(result[0].createdAt).not.toBeNull(); expect(result[0].updatedAt).not.toBeNull();
-      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: 3 }]);
+      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]);
     } finally { globalThis.fetch = originalFetch; }
   });
-  test('continúa después de una página corta cuando aún hay más historial', async () => {
+  test('continúa después de una página corta aunque el total reportado ya se alcanzó', async () => {
     const calls: string[] = []; const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input); calls.push(url);
-      if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: 'Uno' }, { id: 'chat-2', title: 'Dos' }], total: 3 }), { status: 200 });
-      return new Response(JSON.stringify({ items: [{ id: 'chat-3', title: 'Tres' }], total: 3 }), { status: 200 });
+      if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: 'Uno' }, { id: 'chat-2', title: 'Dos' }], total: 2 }), { status: 200 });
+      if (url.includes('offset=2')) return new Response(JSON.stringify({ items: [{ id: 'chat-3', title: 'Tres' }], total: 2 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [], total: 2 }), { status: 200 });
     }) as typeof fetch;
     try {
       const result = await fetchConversationHistory({ pageSize: 28 });
-      expect(calls).toHaveLength(2); expect(calls[1]).toContain('offset=2');
+      expect(calls).toHaveLength(3); expect(calls[1]).toContain('offset=2'); expect(calls[2]).toContain('offset=3');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']);
     } finally { globalThis.fetch = originalFetch; }
   });

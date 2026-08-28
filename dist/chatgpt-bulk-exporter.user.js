@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.15
+// @version      0.1.16
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -436,11 +436,11 @@
 					added++;
 				}
 			}
+			if (added === 0) break;
 			onProgress?.({
 				loaded: conversations.length,
-				total
+				total: total !== null && total > conversations.length ? total : null
 			});
-			if (added === 0 || total !== null && conversations.length >= total) break;
 			offset += items.length;
 		}
 		return conversations;

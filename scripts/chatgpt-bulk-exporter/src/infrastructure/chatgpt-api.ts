@@ -62,8 +62,8 @@ export async function fetchConversationHistory(options: FetchConversationHistory
     if (items.length === 0) break;
     let added = 0;
     for (const item of items) { const conversation = normalizeHistoryItem(item); if (conversation && !seen.has(conversation.id)) { seen.add(conversation.id); conversations.push(conversation); added++; } }
-    onProgress?.({ loaded: conversations.length, total });
-    if (added === 0 || (total !== null && conversations.length >= total)) break;
+    if (added === 0) break;
+    onProgress?.({ loaded: conversations.length, total: total !== null && total > conversations.length ? total : null });
     offset += items.length;
   }
   return conversations;
