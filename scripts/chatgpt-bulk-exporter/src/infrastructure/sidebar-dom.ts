@@ -44,9 +44,12 @@ export function findSidebarMountTarget(root: ParentNode = document): HTMLElement
 export function decorateConversation(link: HTMLAnchorElement, checked: boolean, onChange?: (checked: boolean) => void): HTMLInputElement {
   let input = link.querySelector<HTMLInputElement>('[data-cbe-checkbox]');
   if (!input) {
-    input = link.ownerDocument.createElement('input'); input.type = 'checkbox'; input.dataset.cbeCheckbox = 'true';
+    input = link.ownerDocument.createElement('input'); input.type = 'checkbox'; input.dataset.cbeCheckbox = 'true'; input.className = 'cbe-visually-hidden';
     input.setAttribute('aria-label', `Seleccionar ${link.textContent?.trim() || 'chat'}`);
     input.addEventListener('click', event => event.stopPropagation()); input.addEventListener('change', () => onChange?.(input!.checked)); link.prepend(input);
   }
-  input.checked = checked; return input;
+  input.checked = checked; link.classList.toggle('cbe-is-selected', checked);
+  let marker = link.querySelector<HTMLElement>('[data-cbe-selection-marker]');
+  if (!marker) { marker = link.ownerDocument.createElement('span'); marker.dataset.cbeSelectionMarker = 'true'; marker.className = 'cbe-selection-marker'; marker.setAttribute('aria-hidden', 'true'); link.prepend(marker); }
+  return input;
 }

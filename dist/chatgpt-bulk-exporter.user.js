@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.2
+// @version      0.1.3
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -90,12 +90,22 @@
 			input = link.ownerDocument.createElement("input");
 			input.type = "checkbox";
 			input.dataset.cbeCheckbox = "true";
+			input.className = "cbe-visually-hidden";
 			input.setAttribute("aria-label", `Seleccionar ${link.textContent?.trim() || "chat"}`);
 			input.addEventListener("click", (event) => event.stopPropagation());
 			input.addEventListener("change", () => onChange?.(input.checked));
 			link.prepend(input);
 		}
 		input.checked = checked;
+		link.classList.toggle("cbe-is-selected", checked);
+		let marker = link.querySelector("[data-cbe-selection-marker]");
+		if (!marker) {
+			marker = link.ownerDocument.createElement("span");
+			marker.dataset.cbeSelectionMarker = "true";
+			marker.className = "cbe-selection-marker";
+			marker.setAttribute("aria-hidden", "true");
+			link.prepend(marker);
+		}
 		return input;
 	}
 	var SelectionStore = class {
@@ -972,8 +982,8 @@
 		button.type = "button";
 		button.className = "cbe-menu-item";
 		button.dataset.cbeSelectionTrigger = "true";
-		button.setAttribute("aria-label", "Seleccionar chats");
-		button.innerHTML = `<span class="cbe-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 6.5h10M4 12h10M4 17.5h6"/><path d="m17 7 1.5 1.5L21 6"/><rect x="16" y="14" width="5" height="5" rx="1"/></svg></span><span class="cbe-menu-label">Seleccionar chats</span>`;
+		button.setAttribute("aria-label", "Exportar chats");
+		button.innerHTML = `<span class="cbe-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 14v5h14v-5"/></svg></span><span class="cbe-menu-label">Exportar chats</span>`;
 		button.addEventListener("click", () => onClick?.());
 		target.prepend(button);
 		return button;
@@ -997,29 +1007,35 @@
 		let selecting = false;
 		let controller = null;
 		let field = "updated";
+		let filterOpen = false;
 		root = document.createElement("div");
 		root.id = "cbe-root";
-		const actions = document.createElement("div");
-		actions.id = "cbe-actions";
-		actions.hidden = true;
-		const count = document.createElement("span");
-		count.dataset.cbeCount = "true";
-		const cancel = document.createElement("button");
-		cancel.type = "button";
-		cancel.textContent = "Cancelar";
-		const exportButton = document.createElement("button");
-		exportButton.type = "button";
-		exportButton.textContent = "Exportar";
-		exportButton.disabled = true;
-		const filterButton = document.createElement("button");
-		filterButton.type = "button";
-		filterButton.textContent = "Filtrar por fecha";
-		filterButton.dataset.cbeFilterToggle = "true";
 		const popover = document.createElement("section");
 		popover.className = "cbe-popover";
 		popover.hidden = true;
 		popover.dataset.cbePopover = "true";
-		popover.setAttribute("aria-label", "Filtrar chats por fecha");
+		popover.setAttribute("role", "dialog");
+		popover.setAttribute("aria-label", "Exportar chats");
+		const header = document.createElement("div");
+		header.className = "cbe-popover-header";
+		const heading = document.createElement("strong");
+		heading.textContent = "Exportar chats";
+		const count = document.createElement("span");
+		count.dataset.cbeCount = "true";
+		const close = document.createElement("button");
+		close.type = "button";
+		close.className = "cbe-icon-button";
+		close.setAttribute("aria-label", "Cerrar");
+		close.innerHTML = "×";
+		header.append(heading, count, close);
+		const filterToggle = document.createElement("button");
+		filterToggle.type = "button";
+		filterToggle.className = "cbe-filter-toggle";
+		filterToggle.setAttribute("aria-expanded", "false");
+		filterToggle.innerHTML = "<span>Filtrar por fecha</span><span aria-hidden=\"true\">⌄</span>";
+		const filterPanel = document.createElement("div");
+		filterPanel.className = "cbe-filter-panel";
+		filterPanel.hidden = true;
 		const select = document.createElement("select");
 		select.dataset.cbeDateField = "true";
 		select.innerHTML = "<option value=\"updated\">Última actualización</option><option value=\"created\">Fecha de creación</option>";
@@ -1029,21 +1045,35 @@
 		const error = document.createElement("div");
 		error.className = "cbe-filter-error";
 		error.hidden = true;
+		filterPanel.append(select, fields, error);
 		const list = document.createElement("div");
 		list.className = "cbe-filter-list";
 		list.setAttribute("role", "list");
+		const empty = document.createElement("div");
+		empty.className = "cbe-empty";
+		empty.hidden = true;
+		const footer = document.createElement("div");
+		footer.className = "cbe-popover-footer";
 		const selectAll = document.createElement("button");
 		selectAll.type = "button";
-		selectAll.textContent = "Seleccionar todos";
+		selectAll.className = "cbe-secondary-button";
+		selectAll.textContent = "Seleccionar todo";
 		const clear = document.createElement("button");
 		clear.type = "button";
+		clear.className = "cbe-secondary-button";
 		clear.textContent = "Limpiar";
-		const filterActions = document.createElement("div");
-		filterActions.className = "cbe-filter-actions";
-		filterActions.append(selectAll, clear);
-		popover.append(select, fields, error, filterActions, list);
-		actions.append(count, filterButton, cancel, exportButton);
-		root.append(actions, popover);
+		const cancel = document.createElement("button");
+		cancel.type = "button";
+		cancel.className = "cbe-secondary-button";
+		cancel.textContent = "Cancelar";
+		const exportButton = document.createElement("button");
+		exportButton.type = "button";
+		exportButton.className = "cbe-primary-button";
+		exportButton.textContent = "Exportar";
+		exportButton.disabled = true;
+		footer.append(selectAll, clear, cancel, exportButton);
+		popover.append(header, filterToggle, filterPanel, list, empty, footer);
+		root.append(popover);
 		target.prepend(root);
 		const range = () => ({
 			from: parseDateTimeInput(fields.querySelector("[data-cbe-date=\"from\"]")?.value || ""),
@@ -1054,35 +1084,37 @@
 			const current = range();
 			const invalid = hasInvertedRange(current);
 			error.hidden = !invalid;
-			error.textContent = invalid ? "La fecha Desde debe ser anterior o igual a Hasta." : "";
+			error.textContent = invalid ? "Desde debe ser anterior o igual a Hasta." : "";
 			const visible = invalid ? [] : filterConversations(conversations, field, current);
-			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
+			count.textContent = store.size ? `${store.size} seleccionado${store.size === 1 ? "" : "s"}` : "Selecciona los chats";
 			exportButton.disabled = store.size === 0 || controller !== null;
 			selectAll.disabled = visible.length === 0 || invalid;
+			clear.disabled = store.size === 0;
 			list.replaceChildren();
-			if (!visible.length) {
-				const empty = document.createElement("div");
-				empty.className = "cbe-empty";
-				empty.textContent = invalid ? "Corrige el rango de fechas." : "No hay chats que coincidan.";
-				list.append(empty);
-			}
+			empty.hidden = visible.length > 0;
+			empty.textContent = invalid ? "Corrige el rango de fechas." : "No hay chats que coincidan.";
 			for (const conversation of visible) {
 				const row = document.createElement("label");
-				row.className = "cbe-filter-row";
+				row.className = `cbe-filter-row${store.has(conversation.id) ? " is-selected" : ""}`;
 				const input = document.createElement("input");
 				input.type = "checkbox";
+				input.className = "cbe-visually-hidden";
 				input.checked = store.has(conversation.id);
+				input.setAttribute("aria-label", `Seleccionar ${conversation.title}`);
 				input.addEventListener("change", () => {
 					input.checked ? store.add(conversation.id) : store.remove(conversation.id);
 					refresh();
 				});
+				const mark = document.createElement("span");
+				mark.className = "cbe-row-check";
+				mark.setAttribute("aria-hidden", "true");
 				const text = document.createElement("span");
 				const title = document.createElement("strong");
 				title.textContent = conversation.title;
 				const date = document.createElement("small");
 				date.textContent = formatDateTime(field === "created" ? conversation.createdAt : conversation.updatedAt);
 				text.append(title, date);
-				row.append(input, text);
+				row.append(input, mark, text);
 				list.append(row);
 			}
 			if (selecting) for (const link of conversations) decorateConversation(link.element, store.has(link.id), (checked) => {
@@ -1090,27 +1122,33 @@
 				refresh();
 			});
 		};
-		const exit = (message) => {
+		const exit = () => {
 			if (controller) controller.abort();
 			controller = null;
 			selecting = false;
 			store.clear();
-			actions.hidden = true;
 			popover.hidden = true;
+			filterOpen = false;
+			filterPanel.hidden = true;
+			filterToggle.setAttribute("aria-expanded", "false");
 			for (const link of findConversationLinks()) link.element.querySelector("[data-cbe-checkbox]")?.remove();
-			if (message) trigger.textContent = message;
+			trigger.hidden = false;
 			refresh();
 		};
 		const trigger = mountSelectionTrigger(target, () => {
 			selecting = true;
-			trigger.hidden = true;
-			actions.hidden = false;
+			popover.hidden = false;
+			trigger.setAttribute("aria-expanded", "true");
 			refresh();
 		});
-		filterButton.addEventListener("click", () => {
-			popover.hidden = !popover.hidden;
-			filterButton.setAttribute("aria-expanded", String(!popover.hidden));
-			refresh();
+		trigger.setAttribute("aria-controls", "cbe-export-popover");
+		popover.id = "cbe-export-popover";
+		close.addEventListener("click", exit);
+		cancel.addEventListener("click", exit);
+		filterToggle.addEventListener("click", () => {
+			filterOpen = !filterOpen;
+			filterPanel.hidden = !filterOpen;
+			filterToggle.setAttribute("aria-expanded", String(filterOpen));
 		});
 		select.addEventListener("change", () => {
 			field = select.value;
@@ -1125,7 +1163,6 @@
 			store.clear();
 			refresh();
 		});
-		cancel.addEventListener("click", () => exit());
 		exportButton.addEventListener("click", async () => {
 			controller = new AbortController();
 			exportButton.disabled = true;
@@ -1143,11 +1180,11 @@
 				const pad = (n) => String(n).padStart(2, "0");
 				downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
 			}
-			exit(result.cancelled ? "Exportación cancelada" : result.failures.length ? `${result.files.length} exportados, ${result.failures.length} fallaron` : "Exportación completada");
+			exit();
 		});
 		refresh();
 	}
-	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:relative}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-menu-item[hidden]{display:none!important}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions button{border-radius:6px;padding:6px 9px;background:var(--interactive-bg-secondary-default,transparent)}#cbe-actions button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-actions button:disabled{opacity:.45;cursor:not-allowed}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}.cbe-popover{position:absolute;z-index:20;top:48px;left:8px;right:8px;padding:12px;border:1px solid var(--border-light,#ddd);border-radius:12px;background:var(--bg-primary,#fff);box-shadow:0 8px 24px #0002}.cbe-popover select{width:100%;padding:7px 8px;border:1px solid var(--border-light,#ccc);border-radius:7px;background:var(--bg-primary,#fff);color:inherit}.cbe-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.cbe-date-field{display:grid;gap:4px;color:var(--text-secondary,#666);font-size:11px}.cbe-date-field input{width:100%;box-sizing:border-box;padding:6px 4px;border:1px solid var(--border-light,#ccc);border-radius:6px;background:var(--bg-primary,#fff);color:inherit;font-size:11px}.cbe-filter-error{color:var(--text-error,#b42318);font-size:11px;margin-bottom:8px}.cbe-filter-actions{display:flex;gap:6px;margin-bottom:8px}.cbe-filter-actions button{padding:5px 7px;border-radius:6px;background:var(--interactive-bg-secondary-default,#eee)}.cbe-filter-actions button:disabled{opacity:.45;cursor:not-allowed}.cbe-filter-list{max-height:260px;overflow:auto}.cbe-filter-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-radius:7px;cursor:pointer}.cbe-filter-row:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)}.cbe-filter-row input{accent-color:var(--interactive-bg-secondary-selected,#555)}.cbe-filter-row span{min-width:0;display:grid}.cbe-filter-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-empty{padding:12px 4px;color:var(--text-secondary,#666);text-align:center}`;
+	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:relative;z-index:30;max-width:100%;box-sizing:border-box}#cbe-root *{box-sizing:border-box}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover{position:absolute;z-index:40;top:44px;left:8px;width:min(330px,calc(100vw - 28px));max-width:calc(100% - 16px);padding:10px;border:1px solid var(--border-light,#ddd);border-radius:14px;background:var(--bg-primary,#fff);box-shadow:0 10px 30px #0002}.cbe-popover-header{display:flex;align-items:center;gap:8px;padding:2px 2px 10px}.cbe-popover-header strong{font-size:14px;font-weight:600}.cbe-popover-header [data-cbe-count]{margin-left:auto;color:var(--text-secondary,#666);font-size:12px}.cbe-icon-button{width:28px;height:28px;border-radius:7px;background:transparent!important;color:var(--text-secondary,#666)!important;font-size:20px;line-height:1}.cbe-icon-button:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-filter-toggle{display:flex;justify-content:space-between;width:100%;padding:8px;border-radius:8px;background:var(--interactive-bg-secondary-default,#f5f5f5)!important;text-align:left;font-size:12px}.cbe-filter-toggle:hover{background:var(--interactive-bg-secondary-hover,#eee)!important}.cbe-filter-panel{padding:9px 2px 2px}.cbe-filter-panel select{width:100%;padding:7px 8px;border:1px solid var(--border-light,#ccc);border-radius:7px;background:var(--bg-primary,#fff);color:inherit}.cbe-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.cbe-date-field{display:grid;gap:4px;color:var(--text-secondary,#666);font-size:11px}.cbe-date-field input{width:100%;min-width:0;padding:6px 4px;border:1px solid var(--border-light,#ccc);border-radius:6px;background:var(--bg-primary,#fff);color:inherit;font-size:11px}.cbe-filter-error{color:var(--text-error,#b42318);font-size:11px;margin-top:7px}.cbe-filter-list{max-height:260px;overflow:auto;margin:8px -2px 0}.cbe-filter-row{display:flex;align-items:center;gap:9px;min-height:42px;padding:7px 8px;border-radius:8px;cursor:pointer;transition:background-color 120ms ease}.cbe-filter-row:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)}.cbe-filter-row.is-selected{background:var(--interactive-bg-secondary-selected,#e8e8e8)}.cbe-filter-row span:last-child{min-width:0;display:grid}.cbe-filter-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-row-check{width:16px;height:16px;flex:0 0 16px;border:1px solid var(--border-medium,#aaa);border-radius:5px}.cbe-filter-row input:checked+.cbe-row-check{border-color:var(--text-primary,#444);background:var(--text-primary,#444)}.cbe-filter-row input:checked+.cbe-row-check:after{content:'✓';display:block;color:var(--bg-primary,#fff);font-size:12px;line-height:15px;text-align:center}.cbe-empty{padding:16px 6px;color:var(--text-secondary,#666);text-align:center;font-size:12px}.cbe-popover-footer{display:grid;grid-template-columns:1fr 1fr;gap:6px;border-top:1px solid var(--border-light,#eee);margin-top:8px;padding-top:9px}.cbe-secondary-button,.cbe-primary-button{min-height:34px;padding:7px 8px;border-radius:8px;font-size:12px}.cbe-secondary-button{background:var(--interactive-bg-secondary-default,#f3f3f3)!important}.cbe-secondary-button:hover{background:var(--interactive-bg-secondary-hover,#e9e9e9)!important}.cbe-primary-button{background:var(--text-primary,#202123)!important;color:var(--bg-primary,#fff)!important}.cbe-primary-button:hover{opacity:.88}.cbe-primary-button:disabled,.cbe-secondary-button:disabled{opacity:.45;cursor:not-allowed}.cbe-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.cbe-selection-marker{display:inline-block;width:16px;height:16px;margin:0 7px 0 2px;vertical-align:middle}.cbe-is-selected{background:var(--interactive-bg-secondary-selected,#e8e8e8)!important}.cbe-is-selected .cbe-selection-marker{border-radius:5px;background:var(--text-primary,#444)}.cbe-is-selected .cbe-selection-marker:after{content:'✓';display:block;color:var(--bg-primary,#fff);font-size:12px;line-height:16px;text-align:center}`;
 	function start() {
 		const style = document.createElement("style");
 		style.dataset.cbeStyles = "true";
