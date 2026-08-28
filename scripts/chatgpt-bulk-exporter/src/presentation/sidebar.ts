@@ -51,7 +51,18 @@ export function mountSidebar(): void {
     indexController?.abort(); const activeController = new AbortController(); indexController = activeController; historyState = 'loading'; conversations = []; progress = { loaded: 0, total: null }; status.textContent = 'Cargando historial…'; refresh();
     try {
       conversations = await fetchConversationHistory({ signal: activeController.signal, onProgress: value => { if (indexController !== activeController) return; progress = value; status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`; } });
-      if (indexController !== activeController) return; historyState = 'ready'; status.textContent = `${conversations.length} chats disponibles`; refresh();
+      if (indexController !== activeController) return;
+      if (conversations.length === 0) {
+        conversations = visibleLinks();
+        historyState = conversations.length ? 'error' : 'ready';
+        status.textContent = conversations.length
+          ? 'Mostrando los chats visibles. Puedes seleccionarlos y exportarlos.'
+          : 'No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.';
+      } else {
+        historyState = 'ready';
+        status.textContent = `${conversations.length} chats disponibles`;
+      }
+      refresh();
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return; if (indexController !== activeController) return;
       conversations = visibleLinks(); historyState = 'error'; status.textContent = 'No se pudo cargar el historial completo. Puedes exportar los chats visibles, pero el filtro por fecha no está disponible.'; refresh();

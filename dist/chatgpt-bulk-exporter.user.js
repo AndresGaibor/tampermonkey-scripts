@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.7
+// @version      0.1.8
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -1263,8 +1263,14 @@
 					}
 				});
 				if (indexController !== activeController) return;
-				historyState = "ready";
-				status.textContent = `${conversations.length} chats disponibles`;
+				if (conversations.length === 0) {
+					conversations = visibleLinks();
+					historyState = conversations.length ? "error" : "ready";
+					status.textContent = conversations.length ? "Mostrando los chats visibles. Puedes seleccionarlos y exportarlos." : "No se encontraron chats. Abre o recarga el historial e inténtalo de nuevo.";
+				} else {
+					historyState = "ready";
+					status.textContent = `${conversations.length} chats disponibles`;
+				}
 				refresh();
 			} catch (caught) {
 				if (caught instanceof DOMException && caught.name === "AbortError") return;
