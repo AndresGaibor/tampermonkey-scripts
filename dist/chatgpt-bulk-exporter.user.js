@@ -31,6 +31,15 @@
 		});
 		return result;
 	}
+	function findSidebarMountTarget(root = document) {
+		const history = root.querySelector("#history");
+		if (history) return history;
+		const nav = root.querySelector("nav[aria-label=\"Historial del chat\"]");
+		if (nav) return nav;
+		const firstConversation = findConversationLinks(root)[0]?.element;
+		if (firstConversation) return firstConversation.closest("[data-sidebar-item]")?.parentElement || firstConversation.parentElement;
+		return root.querySelector("#stage-slideover-sidebar [data-sidebar-root], #stage-slideover-sidebar") || root.querySelector("[data-sidebar-root]");
+	}
 	function decorateConversation(link, checked, onChange) {
 		let input = link.querySelector("[data-cbe-checkbox]");
 		if (!input) {
@@ -915,20 +924,31 @@
 		anchor.click();
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
+	function mountSelectionTrigger(target, onClick) {
+		const existing = target.ownerDocument.querySelector("[data-cbe-selection-trigger=\"true\"]");
+		if (existing?.isConnected) return existing;
+		const button = target.ownerDocument.createElement("button");
+		button.type = "button";
+		button.textContent = "Seleccionar chats";
+		button.dataset.cbeSelectionTrigger = "true";
+		button.setAttribute("aria-label", "Seleccionar chats");
+		button.style.display = "block";
+		button.style.width = "100%";
+		button.style.textAlign = "left";
+		button.addEventListener("click", () => onClick?.());
+		target.prepend(button);
+		return button;
+	}
 	function mountSidebar() {
-		if (document.getElementById("cbe-root")) return;
-		const links = findConversationLinks();
-		if (!links.length) return;
+		const target = findSidebarMountTarget();
+		if (!target) return;
+		let root = document.getElementById("cbe-root");
+		if (root?.isConnected) return;
 		const store = new SelectionStore();
 		let selecting = false;
 		let controller = null;
-		const root = document.createElement("div");
+		root = document.createElement("div");
 		root.id = "cbe-root";
-		const button = document.createElement("button");
-		button.type = "button";
-		button.textContent = "Seleccionar chats";
-		button.dataset.cbeAction = "start";
-		button.setAttribute("aria-label", "Seleccionar chats");
 		const actions = document.createElement("div");
 		actions.id = "cbe-actions";
 		actions.hidden = true;
@@ -942,8 +962,8 @@
 		exportButton.textContent = "Exportar";
 		exportButton.disabled = true;
 		actions.append(count, cancel, exportButton);
-		root.append(button, actions);
-		links[0].element.closest("aside")?.prepend(root);
+		root.append(actions);
+		target.prepend(root);
 		const refresh = () => {
 			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
 			exportButton.disabled = store.size === 0 || controller !== null;
@@ -957,14 +977,13 @@
 			selecting = false;
 			store.clear();
 			actions.hidden = true;
-			button.hidden = false;
 			for (const link of findConversationLinks()) link.element.querySelector("[data-cbe-checkbox]")?.remove();
-			if (message) button.textContent = message;
+			if (message) trigger.textContent = message;
 			refresh();
 		};
-		button.addEventListener("click", () => {
+		const trigger = mountSelectionTrigger(target, () => {
 			selecting = true;
-			button.hidden = true;
+			trigger.hidden = true;
 			actions.hidden = false;
 			refresh();
 		});
@@ -975,13 +994,12 @@
 		exportButton.addEventListener("click", async () => {
 			controller = new AbortController();
 			exportButton.disabled = true;
-			cancel.textContent = "Cancelar";
 			const result = await exportBatch({
 				conversationIds: store.ids,
 				signal: controller.signal,
 				fetchConversation,
 				onProgress: (p) => {
-					count.textContent = p.state === "fetching" || p.state === "rendering" ? `Exportando ${p.index} de ${p.total}` : count.textContent;
+					if (p.state === "fetching" || p.state === "rendering") count.textContent = `Exportando ${p.index} de ${p.total}`;
 				},
 				now: new Date()
 			});
@@ -992,7 +1010,6 @@
 			}
 			exit(result.cancelled ? "Exportación cancelada" : result.failures.length ? `${result.files.length} exportados, ${result.failures.length} fallaron` : "Exportación completada");
 		});
-		root.__cbeRefresh = refresh;
 		refresh();
 	}
 	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px}#cbe-root button{border:0;border-radius:6px;padding:6px 9px;color:inherit;background:var(--interactive-bg-secondary-default,transparent);cursor:pointer}#cbe-root button:hover{background:var(--interactive-bg-secondary-hover,#eee)}#cbe-root button:focus-visible,#cbe-root input:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}#cbe-root button:disabled{opacity:.5;cursor:not-allowed}#cbe-actions{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border-light,#ddd);background:var(--sidebar-surface-primary,var(--bg-primary,#fff))}#cbe-actions [data-cbe-count]{margin-right:auto;color:var(--text-secondary,#666)}[data-cbe-checkbox]{margin:0 8px 0 2px;accent-color:var(--interactive-bg-secondary-selected,#555)}`;
@@ -1026,7 +1043,10 @@
 				queueMicrotask(refresh);
 			}
 		};
-		new MutationObserver(schedule).observe(document.body, { childList: true });
+		new MutationObserver(schedule).observe(document.body, {
+			childList: true,
+			subtree: true
+		});
 		refresh();
 	}
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });

@@ -7,7 +7,7 @@ function start(): void {
   const refresh = () => { scheduled = false; mountSidebar(); const aside = document.querySelector('aside'); if (aside !== observedAside) { sidebarObserver?.disconnect(); observedAside = aside; if (aside) { sidebarObserver = new MutationObserver(schedule); sidebarObserver.observe(aside, { childList: true, subtree: true }); } } };
   const schedule = () => { if (!scheduled) { scheduled = true; queueMicrotask(refresh); } };
   const bodyObserver = new MutationObserver(schedule);
-  bodyObserver.observe(document.body, { childList: true });
+  bodyObserver.observe(document.body, { childList: true, subtree: true });
   refresh();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();

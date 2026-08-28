@@ -5,7 +5,8 @@ import { normalizeConversation, getActiveBranch } from '../scripts/chatgpt-bulk-
 import { renderMarkdown } from '../scripts/chatgpt-bulk-exporter/src/domain/markdown.ts';
 import { createFilename, uniqueFilename } from '../scripts/chatgpt-bulk-exporter/src/domain/filenames.ts';
 import { SelectionStore } from '../scripts/chatgpt-bulk-exporter/src/application/selection.ts';
-import { findConversationLinks, decorateConversation } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/sidebar-dom.ts';
+import { findConversationLinks, decorateConversation, findSidebarMountTarget } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/sidebar-dom.ts';
+import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
 
@@ -55,6 +56,18 @@ describe('ChatGPT Bulk Exporter domain', () => {
 });
 
 describe('selection and sidebar', () => {
+  test.each([
+    ['completo', '<div id="stage-slideover-sidebar"><nav aria-label="Historial del chat"><div id="history"><a data-sidebar-item="true" href="/c/one">One</a></div></nav></div>'],
+    ['simplificado', '<div id="stage-slideover-sidebar"><div data-sidebar-root="true"><div>Chats</div><div id="history"><a data-sidebar-item="true" href="/c/one">One</a></div></div></div>'],
+  ])('monta trigger en sidebar %s', (_name, html) => {
+    const dom = new JSDOM(html); const root = dom.window.document;
+    const target = findSidebarMountTarget(root);
+    expect(target).not.toBeNull();
+    mountSelectionTrigger(target!);
+    expect(root.querySelector('[data-cbe-selection-trigger="true"]')).not.toBeNull();
+    mountSelectionTrigger(target!);
+    expect(root.querySelectorAll('[data-cbe-selection-trigger="true"]')).toHaveLength(1);
+  });
   test('selecciona, deselecciona, deduplica y limpia', () => {
     const store = new SelectionStore(); store.toggle('a'); store.toggle('a'); store.toggle('a'); store.toggle('a');
     expect(store.size).toBe(0); store.add('a'); store.add('a'); store.add('b'); expect(store.ids).toEqual(['a', 'b']); store.clear(); expect(store.size).toBe(0);
