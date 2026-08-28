@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.8
+// @version      0.1.9
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -1209,7 +1209,7 @@
 			fields.querySelectorAll("input").forEach((input) => {
 				input.disabled = filteringDisabled;
 			});
-			const visible = historyState === "loading" ? [] : invalid ? [] : filterConversations(conversations, field, current);
+			const visible = historyState === "loading" ? [] : historyState === "error" ? conversations : invalid ? [] : filterConversations(conversations, field, current);
 			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading";
 			clear.disabled = store.size === 0;
 			overlay.hidden = popover.hidden;
