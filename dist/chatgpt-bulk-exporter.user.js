@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.18
+// @version      0.1.19
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -504,7 +504,7 @@
 		};
 	}
 	async function fetchConversationHistory(options = {}) {
-		const { signal, pageSize = 28, onProgress } = options;
+		const { signal, pageSize = 28, onProgress, onUpdate } = options;
 		const conversations = [];
 		const seen = new Set();
 		let offset = 0;
@@ -530,6 +530,7 @@
 				}
 			}
 			if (added === 0) break;
+			onUpdate?.([...conversations]);
 			onProgress?.({
 				loaded: conversations.length,
 				total: total !== null && total > conversations.length ? total : null
@@ -1465,13 +1466,13 @@
 			count.textContent = exportSummary ? `${exportSummary.exported} exportado${exportSummary.exported === 1 ? "" : "s"}` : `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
 			exportButton.textContent = exportSummary ? "Cerrar" : `Exportar (${store.size})`;
 			exportButton.disabled = exportSummary ? false : store.size === 0 || controller !== null;
-			const filteringDisabled = historyState === "loading" || exportSummary !== null;
+			const filteringDisabled = exportSummary !== null;
 			select.disabled = filteringDisabled;
 			fields.querySelectorAll("input").forEach((input) => {
 				input.disabled = filteringDisabled;
 			});
-			const visible = historyState === "loading" ? [] : invalid ? [] : filterAndSortConversations(conversations, field, current);
-			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading" || exportSummary !== null;
+			const visible = invalid ? [] : filterAndSortConversations(conversations, field, current);
+			selectAll.disabled = visible.length === 0 || invalid || exportSummary !== null;
 			clear.disabled = store.size === 0 || exportSummary !== null;
 			overlay.hidden = popover.hidden;
 			list.replaceChildren();
@@ -1561,10 +1562,16 @@
 			try {
 				conversations = await fetchConversationHistory({
 					signal: activeController.signal,
+					onUpdate: (loaded) => {
+						if (indexController !== activeController) return;
+						conversations = loaded;
+						refresh();
+					},
 					onProgress: (value) => {
 						if (indexController !== activeController) return;
 						progress = value;
 						status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`;
+						refresh();
 					}
 				});
 				if (indexController !== activeController) return;

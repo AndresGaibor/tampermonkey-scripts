@@ -195,7 +195,7 @@ describe('cliente autenticado y fallback DOM', () => {
 
 describe('historial paginado', () => {
   test('recupera páginas, deduplica, normaliza fechas y reporta progreso', async () => {
-    clearSessionTokenCache(); const calls: string[] = []; const progress: { loaded: number; total: number | null }[] = [];
+    clearSessionTokenCache(); const calls: string[] = []; const progress: { loaded: number; total: number | null }[] = []; const updates: string[][] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input); if (url === '/api/auth/session') return new Response(JSON.stringify({ accessToken: 'history-token' }), { status: 200 }); calls.push(url);
@@ -203,11 +203,11 @@ describe('historial paginado', () => {
       return new Response(JSON.stringify({ data: { items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 } }), { status: 200 });
     }) as typeof fetch;
     try {
-      const result = await fetchConversationHistory({ pageSize: 2, onProgress: value => progress.push(value) });
+      const result = await fetchConversationHistory({ pageSize: 2, onUpdate: chats => updates.push(chats.map(chat => chat.id)), onProgress: value => progress.push(value) });
       expect(calls[0]).toContain('offset=0'); expect(calls[0]).toContain('limit=2'); expect(calls[1]).toContain('offset=2');
       expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']); expect(result).toHaveLength(3);
       expect(result[0].href).toBe('/c/chat-1'); expect(result[0].createdAt).not.toBeNull(); expect(result[0].updatedAt).not.toBeNull();
-      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]);
+      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: null }]); expect(updates).toEqual([['chat-1', 'chat-2'], ['chat-1', 'chat-2', 'chat-3']]);
     } finally { globalThis.fetch = originalFetch; clearSessionTokenCache(); }
   });
   test('continúa después de una página corta aunque el total reportado ya se alcanzó', async () => {

@@ -71,7 +71,7 @@ export async function fetchConversationForExport(conversationId: string, signal?
 }
 
 export interface ConversationHistoryProgress { loaded: number; total: number | null; }
-export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; onProgress?: (progress: ConversationHistoryProgress) => void; }
+export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; onProgress?: (progress: ConversationHistoryProgress) => void; onUpdate?: (conversations: SidebarConversation[]) => void; }
 type HistoryItem = Record<string, unknown>;
 type HistoryPayload = { items: unknown[]; total: number | null };
 
@@ -102,7 +102,7 @@ function normalizeHistoryItem(item: unknown): SidebarConversation | null {
 }
 
 export async function fetchConversationHistory(options: FetchConversationHistoryOptions = {}): Promise<SidebarConversation[]> {
-  const { signal, pageSize = 28, onProgress } = options;
+  const { signal, pageSize = 28, onProgress, onUpdate } = options;
   const conversations: SidebarConversation[] = []; const seen = new Set<string>();
   let offset = 0; let total: number | null = null;
   while (true) {
@@ -116,6 +116,7 @@ export async function fetchConversationHistory(options: FetchConversationHistory
     let added = 0;
     for (const item of items) { const conversation = normalizeHistoryItem(item); if (conversation && !seen.has(conversation.id)) { seen.add(conversation.id); conversations.push(conversation); added++; } }
     if (added === 0) break;
+    onUpdate?.([...conversations]);
     onProgress?.({ loaded: conversations.length, total: total !== null && total > conversations.length ? total : null });
     offset += items.length;
   }
