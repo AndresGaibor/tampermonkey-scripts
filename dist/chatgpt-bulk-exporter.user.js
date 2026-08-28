@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.3
+// @version      0.1.4
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -15,18 +15,31 @@
 (function() {
 	"use strict";
 	function normalizeTimestamp(value) {
+		if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
 		if (value == null || value === "") return null;
-		const number = typeof value === "number" ? value : Number(value);
-		if (!Number.isFinite(number) || number <= 0) return null;
-		const milliseconds = number < 1e11 ? number * 1e3 : number;
-		const date = new Date(milliseconds);
-		return Number.isNaN(date.getTime()) ? null : date;
+		if (typeof value === "number") {
+			if (!Number.isFinite(value) || value <= 0) return null;
+			const date = new Date(value < 1e11 ? value * 1e3 : value);
+			return Number.isNaN(date.getTime()) ? null : date;
+		}
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			if (!trimmed) return null;
+			const numeric = Number(trimmed);
+			if (Number.isFinite(numeric) && numeric > 0) {
+				const date = new Date(numeric < 1e11 ? numeric * 1e3 : numeric);
+				return Number.isNaN(date.getTime()) ? null : date;
+			}
+			const parsed = Date.parse(trimmed);
+			return Number.isNaN(parsed) ? null : new Date(parsed);
+		}
+		return null;
 	}
-	function formatDateTime(date, locale = "default") {
-		if (!date || Number.isNaN(date.getTime())) return "Unknown";
+	function formatDateTime(date, locale = "es-EC") {
+		if (!date || Number.isNaN(date.getTime())) return "Fecha no disponible";
 		return new Intl.DateTimeFormat(locale, {
-			dateStyle: "short",
-			timeStyle: "medium"
+			dateStyle: "medium",
+			timeStyle: "short"
 		}).format(date);
 	}
 	function compactDate(date) {
@@ -287,6 +300,61 @@
 			if (error instanceof DOMException && error.name === "AbortError") throw error;
 			throw new ConversationFormatError("Unsupported conversation response");
 		}
+	}
+	function normalizeHistoryItem(item) {
+		if (!item || typeof item !== "object") return null;
+		const entry = item;
+		const id = typeof entry.conversation_id === "string" ? entry.conversation_id : typeof entry.id === "string" ? entry.id : "";
+		if (!id.trim()) return null;
+		const createdAt = normalizeTimestamp(entry.create_time ?? entry.created_at);
+		const updatedAt = normalizeTimestamp(entry.update_time ?? entry.updated_at) ?? createdAt;
+		return {
+			id,
+			title: typeof entry.title === "string" && entry.title.trim() ? entry.title.trim() : "ChatGPT chat",
+			href: `/c/${encodeURIComponent(id)}`,
+			createdAt,
+			updatedAt
+		};
+	}
+	async function fetchConversationHistory(options = {}) {
+		const { signal, pageSize = 28, onProgress } = options;
+		const conversations = [];
+		const seen = new Set();
+		let offset = 0;
+		let total = null;
+		while (true) {
+			const query = new URLSearchParams({
+				offset: String(offset),
+				limit: String(pageSize),
+				order: "updated"
+			});
+			const response = await fetch(`/backend-api/conversations?${query}`, {
+				credentials: "include",
+				signal,
+				headers: { Accept: "application/json" }
+			});
+			if (!response.ok) throw new Error(`Conversation history request failed (${response.status})`);
+			const payload = await response.json();
+			const items = Array.isArray(payload) ? payload : payload && typeof payload === "object" && Array.isArray(payload.items) ? payload.items : [];
+			if (!Array.isArray(payload) && payload && typeof payload === "object" && typeof payload.total === "number") total = payload.total;
+			if (items.length === 0) break;
+			let added = 0;
+			for (const item of items) {
+				const conversation = normalizeHistoryItem(item);
+				if (conversation && !seen.has(conversation.id)) {
+					seen.add(conversation.id);
+					conversations.push(conversation);
+					added++;
+				}
+			}
+			onProgress?.({
+				loaded: conversations.length,
+				total
+			});
+			if (added === 0 || total !== null && conversations.length >= total || total === null && items.length < pageSize) break;
+			offset += items.length;
+		}
+		return conversations;
 	}
 	var u8 = Uint8Array, u16 = Uint16Array, i32 = Int32Array;
 	var fleb = new u8([
@@ -958,10 +1026,14 @@
 		anchor.click();
 		setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
-	function parseDateTimeInput(value) {
-		if (!value) return null;
-		const time = new Date(value).getTime();
-		return Number.isFinite(time) ? time : null;
+	function parseDateInput(value, boundary) {
+		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+		if (!match) return null;
+		const year = Number(match[1]);
+		const month = Number(match[2]);
+		const day = Number(match[3]);
+		const date = boundary === "start" ? new Date(year, month - 1, day, 0, 0, 0, 0) : new Date(year, month - 1, day, 23, 59, 59, 999);
+		return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date.getTime() : null;
 	}
 	function isInDateRange(conversation, field, range) {
 		const date = field === "created" ? conversation.createdAt : conversation.updatedAt;
@@ -983,7 +1055,7 @@
 		button.className = "cbe-menu-item";
 		button.dataset.cbeSelectionTrigger = "true";
 		button.setAttribute("aria-label", "Exportar chats");
-		button.innerHTML = `<span class="cbe-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 14v5h14v-5"/></svg></span><span class="cbe-menu-label">Exportar chats</span>`;
+		button.innerHTML = "<span class=\"cbe-menu-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\" focusable=\"false\"><path d=\"M12 3v12m0 0 4-4m-4 4-4-4\"/><path d=\"M5 14v5h14v-5\"/></svg></span><span class=\"cbe-menu-label\">Exportar chats</span>";
 		button.addEventListener("click", () => onClick?.());
 		target.prepend(button);
 		return button;
@@ -991,9 +1063,9 @@
 	function dateInput(document, label, key) {
 		const wrapper = document.createElement("label");
 		wrapper.className = "cbe-date-field";
-		wrapper.textContent = label;
+		wrapper.append(document.createTextNode(label));
 		const input = document.createElement("input");
-		input.type = "datetime-local";
+		input.type = "date";
 		input.dataset.cbeDate = key;
 		wrapper.append(input);
 		return wrapper;
@@ -1004,8 +1076,10 @@
 		let root = document.getElementById("cbe-root");
 		if (root?.isConnected) return;
 		const store = new SelectionStore();
-		let selecting = false;
 		let controller = null;
+		let indexController = null;
+		let conversations = [];
+		let historyState = "idle";
 		let field = "updated";
 		let filterOpen = false;
 		root = document.createElement("div");
@@ -1026,7 +1100,7 @@
 		close.type = "button";
 		close.className = "cbe-icon-button";
 		close.setAttribute("aria-label", "Cerrar");
-		close.innerHTML = "×";
+		close.textContent = "×";
 		header.append(heading, count, close);
 		const filterToggle = document.createElement("button");
 		filterToggle.type = "button";
@@ -1046,22 +1120,27 @@
 		error.className = "cbe-filter-error";
 		error.hidden = true;
 		filterPanel.append(select, fields, error);
+		const status = document.createElement("div");
+		status.className = "cbe-index-status";
 		const list = document.createElement("div");
 		list.className = "cbe-filter-list";
 		list.setAttribute("role", "list");
 		const empty = document.createElement("div");
 		empty.className = "cbe-empty";
 		empty.hidden = true;
-		const footer = document.createElement("div");
-		footer.className = "cbe-popover-footer";
+		const actions = document.createElement("div");
+		actions.className = "cbe-selection-actions";
 		const selectAll = document.createElement("button");
 		selectAll.type = "button";
 		selectAll.className = "cbe-secondary-button";
-		selectAll.textContent = "Seleccionar todo";
+		selectAll.textContent = "Seleccionar visibles";
 		const clear = document.createElement("button");
 		clear.type = "button";
 		clear.className = "cbe-secondary-button";
-		clear.textContent = "Limpiar";
+		clear.textContent = "Limpiar selección";
+		actions.append(selectAll, clear);
+		const footer = document.createElement("div");
+		footer.className = "cbe-popover-footer";
 		const cancel = document.createElement("button");
 		cancel.type = "button";
 		cancel.className = "cbe-secondary-button";
@@ -1069,30 +1148,34 @@
 		const exportButton = document.createElement("button");
 		exportButton.type = "button";
 		exportButton.className = "cbe-primary-button";
-		exportButton.textContent = "Exportar";
-		exportButton.disabled = true;
-		footer.append(selectAll, clear, cancel, exportButton);
-		popover.append(header, filterToggle, filterPanel, list, empty, footer);
+		footer.append(cancel, exportButton);
+		popover.append(header, status, filterToggle, filterPanel, actions, list, empty, footer);
 		root.append(popover);
 		target.prepend(root);
 		const range = () => ({
-			from: parseDateTimeInput(fields.querySelector("[data-cbe-date=\"from\"]")?.value || ""),
-			to: parseDateTimeInput(fields.querySelector("[data-cbe-date=\"to\"]")?.value || "")
+			from: parseDateInput(fields.querySelector("[data-cbe-date=\"from\"]")?.value || "", "start"),
+			to: parseDateInput(fields.querySelector("[data-cbe-date=\"to\"]")?.value || "", "end")
 		});
+		const visibleLinks = () => findConversationLinks(document);
 		const refresh = () => {
-			const conversations = findConversationLinks();
 			const current = range();
 			const invalid = hasInvertedRange(current);
 			error.hidden = !invalid;
 			error.textContent = invalid ? "Desde debe ser anterior o igual a Hasta." : "";
-			const visible = invalid ? [] : filterConversations(conversations, field, current);
-			count.textContent = store.size ? `${store.size} seleccionado${store.size === 1 ? "" : "s"}` : "Selecciona los chats";
+			count.textContent = `${store.size} seleccionado${store.size === 1 ? "" : "s"}`;
+			exportButton.textContent = `Exportar (${store.size})`;
 			exportButton.disabled = store.size === 0 || controller !== null;
-			selectAll.disabled = visible.length === 0 || invalid;
+			const filteringDisabled = historyState === "loading" || historyState === "error";
+			select.disabled = filteringDisabled;
+			fields.querySelectorAll("input").forEach((input) => {
+				input.disabled = filteringDisabled;
+			});
+			const visible = historyState === "loading" ? [] : invalid ? [] : filterConversations(conversations, field, current);
+			selectAll.disabled = visible.length === 0 || invalid || historyState === "loading";
 			clear.disabled = store.size === 0;
 			list.replaceChildren();
-			empty.hidden = visible.length > 0;
-			empty.textContent = invalid ? "Corrige el rango de fechas." : "No hay chats que coincidan.";
+			empty.hidden = historyState === "loading" || visible.length > 0;
+			empty.textContent = invalid ? "Corrige el rango de fechas." : historyState === "error" && visible.length === 0 ? "" : conversations.length === 0 ? "No hay chats disponibles." : "No hay chats que coincidan con este filtro.";
 			for (const conversation of visible) {
 				const row = document.createElement("label");
 				row.className = `cbe-filter-row${store.has(conversation.id) ? " is-selected" : ""}`;
@@ -1112,34 +1195,73 @@
 				const title = document.createElement("strong");
 				title.textContent = conversation.title;
 				const date = document.createElement("small");
-				date.textContent = formatDateTime(field === "created" ? conversation.createdAt : conversation.updatedAt);
+				const dateValue = field === "created" ? conversation.createdAt : conversation.updatedAt;
+				date.textContent = `${field === "created" ? "Creado" : "Actualizado"}: ${formatDateTime(dateValue)}`;
 				text.append(title, date);
 				row.append(input, mark, text);
 				list.append(row);
 			}
-			if (selecting) for (const link of conversations) decorateConversation(link.element, store.has(link.id), (checked) => {
+			for (const link of visibleLinks()) decorateConversation(link.element, store.has(link.id), (checked) => {
 				checked ? store.add(link.id) : store.remove(link.id);
 				refresh();
 			});
 		};
+		const loadHistory = async () => {
+			indexController?.abort();
+			const activeController = new AbortController();
+			indexController = activeController;
+			historyState = "loading";
+			conversations = [];
+			status.textContent = "Cargando historial…";
+			refresh();
+			try {
+				conversations = await fetchConversationHistory({
+					signal: activeController.signal,
+					onProgress: (value) => {
+						if (indexController !== activeController) return;
+						status.textContent = value.total === null ? `Cargando historial… ${value.loaded}` : `Cargando historial… ${value.loaded}/${value.total}`;
+					}
+				});
+				if (indexController !== activeController) return;
+				historyState = "ready";
+				status.textContent = `${conversations.length} chats disponibles`;
+				refresh();
+			} catch (caught) {
+				if (caught instanceof DOMException && caught.name === "AbortError") return;
+				if (indexController !== activeController) return;
+				conversations = visibleLinks();
+				historyState = "error";
+				status.textContent = "No se pudo cargar el historial completo. Puedes exportar los chats visibles, pero el filtro por fecha no está disponible.";
+				refresh();
+			} finally {
+				if (indexController === activeController) indexController = null;
+			}
+		};
 		const exit = () => {
-			if (controller) controller.abort();
+			controller?.abort();
+			indexController?.abort();
 			controller = null;
-			selecting = false;
+			indexController = null;
 			store.clear();
 			popover.hidden = true;
 			filterOpen = false;
 			filterPanel.hidden = true;
 			filterToggle.setAttribute("aria-expanded", "false");
-			for (const link of findConversationLinks()) link.element.querySelector("[data-cbe-checkbox]")?.remove();
+			for (const link of visibleLinks()) {
+				link.element.querySelector("[data-cbe-checkbox]")?.remove();
+				link.element.querySelector("[data-cbe-selection-marker]")?.remove();
+				link.element.classList.remove("cbe-is-selected");
+			}
+			conversations = [];
+			historyState = "idle";
 			trigger.hidden = false;
 			refresh();
 		};
 		const trigger = mountSelectionTrigger(target, () => {
-			selecting = true;
 			popover.hidden = false;
+			trigger.hidden = true;
 			trigger.setAttribute("aria-expanded", "true");
-			refresh();
+			loadHistory();
 		});
 		trigger.setAttribute("aria-controls", "cbe-export-popover");
 		popover.id = "cbe-export-popover";
@@ -1156,7 +1278,7 @@
 		});
 		fields.addEventListener("input", refresh);
 		selectAll.addEventListener("click", () => {
-			for (const conversation of filterConversations(findConversationLinks(), field, range())) store.add(conversation.id);
+			for (const conversation of filterConversations(conversations, field, range())) store.add(conversation.id);
 			refresh();
 		});
 		clear.addEventListener("click", () => {
@@ -1164,27 +1286,33 @@
 			refresh();
 		});
 		exportButton.addEventListener("click", async () => {
+			if (!store.size) return;
 			controller = new AbortController();
-			exportButton.disabled = true;
-			const result = await exportBatch({
-				conversationIds: store.ids,
-				signal: controller.signal,
-				fetchConversation,
-				onProgress: (p) => {
-					if (p.state === "fetching" || p.state === "rendering") count.textContent = `Exportando ${p.index} de ${p.total}`;
-				},
-				now: new Date()
-			});
-			if (!result.cancelled && result.files.length) {
-				const stamp = new Date();
-				const pad = (n) => String(n).padStart(2, "0");
-				downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
+			refresh();
+			try {
+				const result = await exportBatch({
+					conversationIds: store.ids,
+					signal: controller.signal,
+					fetchConversation,
+					onProgress: (p) => {
+						if (p.state === "fetching" || p.state === "rendering") count.textContent = `Exportando ${p.index} de ${p.total}`;
+					},
+					now: new Date()
+				});
+				if (!result.cancelled && result.files.length) {
+					const stamp = new Date();
+					const pad = (n) => String(n).padStart(2, "0");
+					downloadBytes(buildZip(result.files), `ChatGPT-chats-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.zip`);
+				}
+			} finally {
+				controller = null;
+				exit();
 			}
-			exit();
 		});
+		status.textContent = "Cargando historial…";
 		refresh();
 	}
-	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:relative;z-index:30;max-width:100%;box-sizing:border-box}#cbe-root *{box-sizing:border-box}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left;transition:background-color 120ms ease,color 120ms ease}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-item:active{background:var(--interactive-bg-secondary-press,#e5e5e5)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover{position:absolute;z-index:40;top:44px;left:8px;width:min(330px,calc(100vw - 28px));max-width:calc(100% - 16px);padding:10px;border:1px solid var(--border-light,#ddd);border-radius:14px;background:var(--bg-primary,#fff);box-shadow:0 10px 30px #0002}.cbe-popover-header{display:flex;align-items:center;gap:8px;padding:2px 2px 10px}.cbe-popover-header strong{font-size:14px;font-weight:600}.cbe-popover-header [data-cbe-count]{margin-left:auto;color:var(--text-secondary,#666);font-size:12px}.cbe-icon-button{width:28px;height:28px;border-radius:7px;background:transparent!important;color:var(--text-secondary,#666)!important;font-size:20px;line-height:1}.cbe-icon-button:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-filter-toggle{display:flex;justify-content:space-between;width:100%;padding:8px;border-radius:8px;background:var(--interactive-bg-secondary-default,#f5f5f5)!important;text-align:left;font-size:12px}.cbe-filter-toggle:hover{background:var(--interactive-bg-secondary-hover,#eee)!important}.cbe-filter-panel{padding:9px 2px 2px}.cbe-filter-panel select{width:100%;padding:7px 8px;border:1px solid var(--border-light,#ccc);border-radius:7px;background:var(--bg-primary,#fff);color:inherit}.cbe-date-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.cbe-date-field{display:grid;gap:4px;color:var(--text-secondary,#666);font-size:11px}.cbe-date-field input{width:100%;min-width:0;padding:6px 4px;border:1px solid var(--border-light,#ccc);border-radius:6px;background:var(--bg-primary,#fff);color:inherit;font-size:11px}.cbe-filter-error{color:var(--text-error,#b42318);font-size:11px;margin-top:7px}.cbe-filter-list{max-height:260px;overflow:auto;margin:8px -2px 0}.cbe-filter-row{display:flex;align-items:center;gap:9px;min-height:42px;padding:7px 8px;border-radius:8px;cursor:pointer;transition:background-color 120ms ease}.cbe-filter-row:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)}.cbe-filter-row.is-selected{background:var(--interactive-bg-secondary-selected,#e8e8e8)}.cbe-filter-row span:last-child{min-width:0;display:grid}.cbe-filter-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-row-check{width:16px;height:16px;flex:0 0 16px;border:1px solid var(--border-medium,#aaa);border-radius:5px}.cbe-filter-row input:checked+.cbe-row-check{border-color:var(--text-primary,#444);background:var(--text-primary,#444)}.cbe-filter-row input:checked+.cbe-row-check:after{content:'✓';display:block;color:var(--bg-primary,#fff);font-size:12px;line-height:15px;text-align:center}.cbe-empty{padding:16px 6px;color:var(--text-secondary,#666);text-align:center;font-size:12px}.cbe-popover-footer{display:grid;grid-template-columns:1fr 1fr;gap:6px;border-top:1px solid var(--border-light,#eee);margin-top:8px;padding-top:9px}.cbe-secondary-button,.cbe-primary-button{min-height:34px;padding:7px 8px;border-radius:8px;font-size:12px}.cbe-secondary-button{background:var(--interactive-bg-secondary-default,#f3f3f3)!important}.cbe-secondary-button:hover{background:var(--interactive-bg-secondary-hover,#e9e9e9)!important}.cbe-primary-button{background:var(--text-primary,#202123)!important;color:var(--bg-primary,#fff)!important}.cbe-primary-button:hover{opacity:.88}.cbe-primary-button:disabled,.cbe-secondary-button:disabled{opacity:.45;cursor:not-allowed}.cbe-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.cbe-selection-marker{display:inline-block;width:16px;height:16px;margin:0 7px 0 2px;vertical-align:middle}.cbe-is-selected{background:var(--interactive-bg-secondary-selected,#e8e8e8)!important}.cbe-is-selected .cbe-selection-marker{border-radius:5px;background:var(--text-primary,#444)}.cbe-is-selected .cbe-selection-marker:after{content:'✓';display:block;color:var(--bg-primary,#fff);font-size:12px;line-height:16px;text-align:center}`;
+	var styles = `#cbe-root{font-family:var(--font-sans,ui-sans-serif);color:var(--text-primary,#202123);font-size:13px;position:relative;z-index:30;max-width:100%;box-sizing:border-box}#cbe-root *{box-sizing:border-box}#cbe-root button,#cbe-root input,#cbe-root select{font:inherit}#cbe-root button{border:0;color:inherit;cursor:pointer}#cbe-root button:disabled{cursor:default;opacity:.5}#cbe-root button:focus-visible,#cbe-root input:focus-visible,#cbe-root select:focus-visible{outline:2px solid var(--text-secondary,#888);outline-offset:2px}.cbe-menu-item{display:flex!important;align-items:center;width:100%;min-height:40px;padding:8px 12px!important;gap:10px;border-radius:10px;background:transparent!important;text-align:left}.cbe-menu-item:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-menu-icon{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;color:var(--text-secondary,#666);flex:0 0 20px}.cbe-menu-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cbe-menu-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover{position:absolute;z-index:40;top:44px;left:6px;width:min(390px,calc(100vw - 24px));max-width:calc(100% - 12px);max-height:min(78vh,720px);display:flex;flex-direction:column;padding:12px;border:1px solid var(--border-light,#ddd);border-radius:14px;background:var(--bg-primary,#fff);box-shadow:0 10px 30px #0002}.cbe-popover-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:2px 2px 10px}.cbe-popover-header strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-popover-header [data-cbe-count]{white-space:nowrap;color:var(--text-secondary,#666);font-size:12px}.cbe-icon-button{width:28px;height:28px;border-radius:7px;background:transparent!important;color:var(--text-secondary,#666)!important;font-size:20px;line-height:1}.cbe-icon-button:hover{background:var(--interactive-bg-secondary-hover,#f1f1f1)!important}.cbe-index-status{font-size:11px;line-height:1.4;color:var(--text-secondary,#666);padding:0 2px 8px}.cbe-index-status.is-error{color:var(--text-error,#b42318)}.cbe-filter-toggle{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:34px;padding:7px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;text-align:left}.cbe-filter-panel{padding-top:8px}.cbe-filter-panel select,.cbe-date-field input{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--border-light,#ddd);border-radius:8px;background:var(--bg-primary,#fff);color:inherit;font-size:12px}.cbe-date-fields{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}.cbe-date-field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-secondary,#666)}.cbe-filter-error{padding-top:6px;color:var(--text-error,#b42318);font-size:11px}.cbe-selection-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}.cbe-secondary-button,.cbe-primary-button{min-height:32px;padding:6px 9px;border-radius:8px;background:var(--bg-secondary,#f7f7f8)!important;font-size:12px}.cbe-primary-button{background:var(--interactive-bg-primary,#000)!important;color:var(--text-on-color,#fff)!important}.cbe-filter-list{min-height:120px;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;margin:8px -4px 0}.cbe-filter-row{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 8px;border-radius:8px;cursor:pointer}.cbe-filter-row:hover,.cbe-filter-row.is-selected{background:var(--bg-secondary,#f7f7f8)}.cbe-filter-row>span:last-child{min-width:0;display:flex;flex-direction:column;gap:2px}.cbe-filter-row strong,.cbe-filter-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cbe-filter-row small{color:var(--text-secondary,#666);font-size:11px}.cbe-row-check,.cbe-selection-marker{width:16px;height:16px;flex:0 0 16px;border:1px solid var(--border-medium,#999);border-radius:4px}.cbe-filter-row.is-selected .cbe-row-check,.cbe-is-selected .cbe-selection-marker{background:var(--interactive-bg-primary,#000);border-color:var(--interactive-bg-primary,#000)}.cbe-empty{padding:24px 8px;text-align:center;color:var(--text-secondary,#666);font-size:12px}.cbe-popover-footer{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px}.cbe-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.cbe-selection-marker{display:inline-block;margin-right:6px;vertical-align:middle}.cbe-is-selected{background:var(--bg-secondary,#f7f7f8)}`;
 	function start() {
 		const style = document.createElement("style");
 		style.dataset.cbeStyles = "true";

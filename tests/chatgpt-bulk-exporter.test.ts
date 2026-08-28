@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { normalizeTimestamp, formatDateTime } from '../scripts/chatgpt-bulk-exporter/src/domain/dates.ts';
+import { fetchConversationHistory } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/chatgpt-api.ts';
 import { normalizeConversation, getActiveBranch } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation.ts';
 import { renderMarkdown } from '../scripts/chatgpt-bulk-exporter/src/domain/markdown.ts';
 import { createFilename, uniqueFilename } from '../scripts/chatgpt-bulk-exporter/src/domain/filenames.ts';
@@ -9,7 +10,7 @@ import { findConversationLinks, decorateConversation, findSidebarMountTarget } f
 import { mountSelectionTrigger } from '../scripts/chatgpt-bulk-exporter/src/presentation/sidebar.ts';
 import { exportBatch } from '../scripts/chatgpt-bulk-exporter/src/application/exporter.ts';
 import { buildZip } from '../scripts/chatgpt-bulk-exporter/src/infrastructure/download.ts';
-import { filterConversations, hasInvertedRange, parseDateTimeInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
+import { filterConversations, hasInvertedRange, parseDateInput, type SidebarConversation } from '../scripts/chatgpt-bulk-exporter/src/domain/conversation-filter.ts';
 
 const raw = (current_node = 'a') => ({
   conversation_id: 'c1', title: 'Demo', create_time: 1724672589, update_time: 1724672706,
@@ -27,11 +28,15 @@ describe('ChatGPT Bulk Exporter domain', () => {
     expect(conversation.id).toBe('c1');
     expect(getActiveBranch(conversation).map(m => m.content)).toEqual(['Pregunta', 'Respuesta']);
   });
-  test('normaliza timestamp segundos, milisegundos, faltante e inválido', () => {
-    expect(normalizeTimestamp(1724672589)?.getTime()).toBe(1724672589000);
-    expect(normalizeTimestamp(1724672589000)?.getTime()).toBe(1724672589000);
+  test('normaliza timestamp segundos, milisegundos, epoch string, ISO, faltante e inválido', () => {
+    expect(normalizeTimestamp(1779990000)?.getTime()).toBe(1779990000000);
+    expect(normalizeTimestamp(1779990000000)?.getTime()).toBe(1779990000000);
+    expect(normalizeTimestamp('1779990000')?.getTime()).toBe(1779990000000);
+    expect(normalizeTimestamp('2026-08-28T07:00:00.000Z')?.getTime()).toBe(Date.parse('2026-08-28T07:00:00.000Z'));
+    expect(normalizeTimestamp('invalid')).toBeNull();
+    expect(normalizeTimestamp('')).toBeNull();
     expect(normalizeTimestamp(null)).toBeNull();
-    expect(normalizeTimestamp('bad')).toBeNull();
+    expect(formatDateTime(null)).toBe('Fecha no disponible');
   });
   test('renderiza metadata, Prompt/Response, fechas locales, multilinea y código', () => {
     const md = renderMarkdown(normalizeConversation(raw()), new Date('2026-08-28T02:15:23Z'), 'en-US');
@@ -69,11 +74,16 @@ describe('filtro de chats por fecha y hora', () => {
     expect(filterConversations(chats, 'updated', range).map(chat => chat.id)).toEqual(['old']);
     expect(filterConversations(chats, 'created', { from: null, to: null }).map(chat => chat.id)).toEqual(['old', 'new', 'unknown']);
   });
-  test('detecta rangos invertidos y convierte datetime-local', () => {
+  test('detecta rangos invertidos y convierte días completos en hora local', () => {
     expect(hasInvertedRange({ from: 20, to: 10 })).toBe(true);
     expect(hasInvertedRange({ from: 10, to: 20 })).toBe(false);
-    expect(parseDateTimeInput('')).toBeNull();
-    expect(parseDateTimeInput('2024-01-01T10:00')).toBe(new Date('2024-01-01T10:00').getTime());
+    expect(parseDateInput('', 'start')).toBeNull();
+    const start = parseDateInput('2024-01-01', 'start')!;
+    const end = parseDateInput('2024-01-01', 'end')!;
+    expect(new Date(start).getHours()).toBe(0);
+    expect(new Date(end).getHours()).toBe(23);
+    expect(end - start).toBe(86_399_999);
+    expect(parseDateInput('2024-02-31', 'start')).toBeNull();
   });
 });
 
@@ -111,6 +121,30 @@ describe('selection and sidebar', () => {
     const row = aside.querySelector('a')!;
     expect(decorateConversation(row, false)).toBeTruthy();
     decorateConversation(row, false); expect(row.querySelectorAll('[data-cbe-checkbox]').length).toBe(1);
+  });
+});
+
+describe('historial paginado', () => {
+  test('recupera páginas, deduplica, normaliza fechas y reporta progreso', async () => {
+    const calls: string[] = []; const progress: { loaded: number; total: number | null }[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url);
+      if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: ' Uno ', create_time: '2026-08-25T10:00:00.000Z', update_time: '2026-08-28T10:00:00.000Z' }, { id: 'chat-2', title: 'Dos', create_time: '2026-08-24T10:00:00.000Z', update_time: '2026-08-27T10:00:00.000Z' }], total: 3 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const result = await fetchConversationHistory({ pageSize: 2, onProgress: value => progress.push(value) });
+      expect(calls[0]).toContain('offset=0'); expect(calls[0]).toContain('limit=2'); expect(calls[1]).toContain('offset=2');
+      expect(result.map(chat => chat.id)).toEqual(['chat-1', 'chat-2', 'chat-3']); expect(result).toHaveLength(3);
+      expect(result[0].href).toBe('/c/chat-1'); expect(result[0].createdAt).not.toBeNull(); expect(result[0].updatedAt).not.toBeNull();
+      expect(progress).toEqual([{ loaded: 2, total: 3 }, { loaded: 3, total: 3 }]);
+    } finally { globalThis.fetch = originalFetch; }
+  });
+  test('usa create_time como fallback y omite entradas sin ID', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify([{ id: 'only-created', title: '', create_time: '2026-08-25T10:00:00.000Z', update_time: null }, { title: 'sin id' }]), { status: 200 })) as typeof fetch;
+    try { const result = await fetchConversationHistory({ pageSize: 28 }); expect(result).toHaveLength(1); expect(result[0].title).toBe('ChatGPT chat'); expect(result[0].updatedAt?.getTime()).toBe(result[0].createdAt?.getTime()); } finally { globalThis.fetch = originalFetch; }
   });
 });
 
