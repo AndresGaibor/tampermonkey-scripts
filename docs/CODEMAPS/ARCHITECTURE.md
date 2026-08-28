@@ -14,6 +14,7 @@ package.json
 └── scripts/
     ├── sri-comprobantes/
     ├── better-chatgpt-assistant/
+    ├── chatgpt-bulk-exporter/
     └── demo-current-site/
 ```
 

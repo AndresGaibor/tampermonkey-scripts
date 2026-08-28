@@ -53,6 +53,7 @@ bun run list
 - `sri-comprobantes` - script del SRI para comprobantes sincronizados manual.
 - `demo-current-site` - ejemplo mínimo para crear nuevos userscripts.
 - `better-chatgpt-assistant` - asistente multifunción para ChatGPT web con virtualización, exportación y panel de control.
+- `chatgpt-bulk-exporter` - selección y exportación secuencial de chats ChatGPT a un ZIP Markdown.
 - `bump:userscripts` - actualiza las versiones de los userscripts antes del commit.
 
 ## Desarrollar el script del SRI
@@ -104,6 +105,18 @@ O usa variables de entorno al compilar:
 ```bash
 USERSCRIPTS_RAW_BASE="https://raw.githubusercontent.com/AndresGaibor/tampermonkey-scripts/main/dist" bun run build:all
 ```
+
+## ChatGPT Bulk Exporter
+
+Userscript independiente para seleccionar múltiples conversaciones desde el sidebar de ChatGPT y descargarlas secuencialmente como archivos Markdown dentro de un único ZIP. Usa la API same-origin de la sesión actual, conserva la rama activa y timestamps locales, y no envía datos a servidores externos.
+
+Compilar:
+
+```bash
+bun run build:chatgpt-bulk-exporter
+```
+
+Salida: `dist/chatgpt-bulk-exporter.user.js` y `dist/chatgpt-bulk-exporter.meta.js`. Instala el `.user.js` en Tampermonkey mediante **Create a new script**, pegando el contenido generado o abriendo el archivo local.
 
 ## Agregar otro userscript
 

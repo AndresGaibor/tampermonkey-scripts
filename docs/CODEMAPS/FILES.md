@@ -59,6 +59,14 @@
 - `src/presentation/dashboard-hooks.ts` — bindings UI.
 - `src/presentation/dashboard-styles.ts` — CSS inyectado.
 
+## `scripts/chatgpt-bulk-exporter/`
+
+- `src/main.ts` — bootstrap y observers del sidebar.
+- `src/domain/` — normalización, fechas, Markdown y nombres.
+- `src/application/` — selección y exportador secuencial.
+- `src/infrastructure/` — API ChatGPT, DOM del sidebar y descarga ZIP.
+- `src/presentation/` — UI y estilos.
+
 ## `scripts/demo-current-site/`
 
 - `src/main.ts` — demo simple.

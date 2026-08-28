@@ -128,6 +128,19 @@ import './scripts/sri-comprobantes/src/main'
 import './scripts/better-chatgpt-assistant/src/main'
 ```
 
+## `chatgpt-bulk-exporter`
+
+### `scripts/chatgpt-bulk-exporter/src`
+
+**Purpose**: selección múltiple y exportación privada de conversaciones ChatGPT a ZIP Markdown.
+
+**Key Files**:
+- `domain/*` — conversación, fechas, Markdown y filenames.
+- `infrastructure/chatgpt-api.ts` — adaptador same-origin de conversación.
+- `infrastructure/sidebar-dom.ts` — descubrimiento y decoración semántica del sidebar.
+- `application/*` — selección y lote secuencial cancelable.
+- `presentation/*` — UI y estilos nativos.
+
 ## `demo-current-site`
 
 ### `scripts/demo-current-site/src`
