@@ -41,5 +41,5 @@ export const tampermonkeyDateCache = new ConversationDateCache({
 });
 
 export function cachedToSidebarConversation(entry: CachedConversationDate, fallback: SidebarConversation): SidebarConversation {
-  return { ...fallback, title: entry.title || fallback.title, createdAt: entry.createdAt === null ? null : new Date(entry.createdAt), updatedAt: entry.updatedAt === null ? null : new Date(entry.updatedAt) };
+  return { ...fallback, title: entry.title || fallback.title, createdAt: entry.createdAt === null ? fallback.createdAt : new Date(entry.createdAt), updatedAt: entry.updatedAt === null ? fallback.updatedAt : new Date(entry.updatedAt) };
 }

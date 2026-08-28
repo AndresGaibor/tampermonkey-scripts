@@ -166,6 +166,14 @@ describe('índice progresivo y caché de fechas', () => {
     cache.save(Array.from({ length: 501 }, (_, index) => ({ id: `c${index}`, title: '', createdAt: null, updatedAt: null, validatedAt: index })), 2_000);
     expect((values.get(CACHE_KEY) as CachedConversationDate[])).toHaveLength(CACHE_MAX_ENTRIES);
   });
+  test('no deja que una caché incompleta borre fechas del historial y la reintenta', async () => {
+    const values = new Map<string, unknown>([[CACHE_KEY, [{ id: 'a', title: 'cached', createdAt: null, updatedAt: null, validatedAt: 1_000 }]]]);
+    const cache = new ConversationDateCache({ get: key => values.get(key), set: (key, value) => values.set(key, value) });
+    const updates: SidebarConversation[] = [];
+    await indexConversationDates({ conversations: [{ ...base('a'), createdAt: new Date(10), updatedAt: new Date(20) }], cache, now: 2_000, fetchConversation: async id => normalizeConversation({ ...raw(), conversation_id: id, create_time: 30, update_time: 40 }), onUpdate: chat => updates.push(chat) });
+    expect(updates[0].createdAt?.getTime()).toBe(10);
+    expect(updates.at(-1)?.createdAt?.getTime()).toBe(30_000);
+  });
   test('convierte metadata de detalle e indexa progresivamente con errores aislados', async () => {
     const values = new Map<string, unknown>(); const cache = new ConversationDateCache({ get: key => values.get(key), set: (key, value) => values.set(key, value) });
     const updates: string[] = []; const progress: string[] = [];

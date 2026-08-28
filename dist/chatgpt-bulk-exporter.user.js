@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT - Bulk Markdown Exporter
 // @namespace    https://github.com/AndresGaibor/userscripts
-// @version      0.1.11
+// @version      0.1.12
 // @author       Andres
 // @description  Selecciona múltiples conversaciones de ChatGPT y expórtalas como Markdown dentro de un ZIP.
 // @supportURL   https://github.com/AndresGaibor/tampermonkey-scripts/issues
@@ -441,8 +441,8 @@
 		return {
 			...fallback,
 			title: entry.title || fallback.title,
-			createdAt: entry.createdAt === null ? null : new Date(entry.createdAt),
-			updatedAt: entry.updatedAt === null ? null : new Date(entry.updatedAt)
+			createdAt: entry.createdAt === null ? fallback.createdAt : new Date(entry.createdAt),
+			updatedAt: entry.updatedAt === null ? fallback.updatedAt : new Date(entry.updatedAt)
 		};
 	}
 	async function indexConversationDates(options) {
@@ -455,7 +455,8 @@
 			const cached = byId.get(conversation.id);
 			if (cached) onUpdate?.(cachedToSidebarConversation(cached, conversation));
 			const missingDate = !conversation.createdAt || !conversation.updatedAt;
-			if (!cached || now - cached.validatedAt >= 864e5 || missingDate) stale.push(conversation);
+			const incompleteCache = !cached?.createdAt || !cached?.updatedAt;
+			if (!cached || now - cached.validatedAt >= 864e5 || missingDate || incompleteCache) stale.push(conversation);
 		}
 		let loaded = 0;
 		const report = () => onProgress?.({
