@@ -131,7 +131,7 @@ describe('historial paginado', () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input); calls.push(url);
       if (url.includes('offset=0')) return new Response(JSON.stringify({ items: [{ id: 'chat-1', title: ' Uno ', create_time: '2026-08-25T10:00:00.000Z', update_time: '2026-08-28T10:00:00.000Z' }, { id: 'chat-2', title: 'Dos', create_time: '2026-08-24T10:00:00.000Z', update_time: '2026-08-27T10:00:00.000Z' }], total: 3 }), { status: 200 });
-      return new Response(JSON.stringify({ items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 }), { status: 200 });
+      return new Response(JSON.stringify({ data: { items: [{ id: 'chat-2', title: 'Duplicado' }, { id: 'chat-3', title: 'Tres', create_time: '2026-08-23T10:00:00.000Z', update_time: '2026-08-26T10:00:00.000Z' }], total: 3 } }), { status: 200 });
     }) as typeof fetch;
     try {
       const result = await fetchConversationHistory({ pageSize: 2, onProgress: value => progress.push(value) });

@@ -15,6 +15,24 @@ export interface ConversationHistoryProgress { loaded: number; total: number | n
 export interface FetchConversationHistoryOptions { signal?: AbortSignal; pageSize?: number; onProgress?: (progress: ConversationHistoryProgress) => void; }
 type HistoryItem = Record<string, unknown>;
 
+type HistoryPayload = { items: unknown[]; total: number | null };
+
+function readHistoryPayload(payload: unknown): HistoryPayload {
+  if (Array.isArray(payload)) return { items: payload, total: null };
+  if (!payload || typeof payload !== 'object') return { items: [], total: null };
+  const record = payload as Record<string, unknown>;
+  const candidates = [record.items, record.conversations, record.data];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return { items: candidate, total: typeof record.total === 'number' ? record.total : null };
+    if (candidate && typeof candidate === 'object') {
+      const nested = candidate as Record<string, unknown>;
+      const items = Array.isArray(nested.items) ? nested.items : Array.isArray(nested.conversations) ? nested.conversations : null;
+      if (items) return { items, total: typeof record.total === 'number' ? record.total : typeof nested.total === 'number' ? nested.total : null };
+    }
+  }
+  return { items: [], total: typeof record.total === 'number' ? record.total : null };
+}
+
 function normalizeHistoryItem(item: unknown): SidebarConversation | null {
   if (!item || typeof item !== 'object') return null;
   const entry = item as HistoryItem;
@@ -34,8 +52,9 @@ export async function fetchConversationHistory(options: FetchConversationHistory
     const response = await fetch(`/backend-api/conversations?${query}`, { credentials: 'include', signal, headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`Conversation history request failed (${response.status})`);
     const payload: unknown = await response.json();
-    const items = Array.isArray(payload) ? payload : payload && typeof payload === 'object' && Array.isArray((payload as { items?: unknown[] }).items) ? (payload as { items: unknown[] }).items : [];
-    if (!Array.isArray(payload) && payload && typeof payload === 'object' && typeof (payload as { total?: unknown }).total === 'number') total = (payload as { total: number }).total;
+    const page = readHistoryPayload(payload);
+    const items = page.items;
+    if (page.total !== null) total = page.total;
     if (items.length === 0) break;
     let added = 0;
     for (const item of items) { const conversation = normalizeHistoryItem(item); if (conversation && !seen.has(conversation.id)) { seen.add(conversation.id); conversations.push(conversation); added++; } }
